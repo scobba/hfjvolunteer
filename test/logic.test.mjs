@@ -220,10 +220,13 @@ test('migration reads copied-in tabs, or the ones Settings names', () => {
   assert.deepEqual([...app.migrationSourceTabNames(names, ' LIPs old , Nurses old ')], ['LIPs old', 'Nurses old']);
 });
 
-test('manifest only asks for the bound spreadsheet', () => {
+test('manifest asks only for the bound spreadsheet and app-created Drive files', () => {
   const scopes = JSON.parse(readSrc('appsscript.json')).oauthScopes;
   assert.ok(scopes.includes('https://www.googleapis.com/auth/spreadsheets.currentonly'));
-  assert.ok(!scopes.some((s) => /auth\/spreadsheets$|auth\/drive/.test(s)), scopes.join(', '));
+  assert.ok(scopes.includes('https://www.googleapis.com/auth/drive.file'));
+  // Full Drive or Sheets access would reach the HFJ EMR, which lives in Google Drive.
+  const broad = scopes.filter((s) => /auth\/(spreadsheets|drive|drive\.readonly|documents)$/.test(s));
+  assert.deepEqual(broad, []);
 });
 
 test('admin page script parses', () => {

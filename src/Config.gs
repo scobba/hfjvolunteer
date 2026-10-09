@@ -11,7 +11,9 @@ var TABS = {
   SETTINGS: 'Settings',
   ADMINS: 'Admins',
   AUDIT: 'AuditLog',
-  REMINDER_LOG: 'ReminderLog'
+  REMINDER_LOG: 'ReminderLog',
+  DOCUMENTS: 'Documents',
+  SIGNATURES: 'Signatures'
 };
 
 var SCHEMAS = {
@@ -21,9 +23,10 @@ var SCHEMAS = {
     ['Phone', 'text'], ['SpanishFluency', 'text'], ['Notes', 'text'],
     ['Status', 'text'], ['CallTargetPerMonth', 'int'], ['OnSignal', 'bool'],
     ['Telehealth', 'bool'], ['Precepting', 'bool'],
-    ['DriveFolderUrl', 'text'],
+    ['DriveFolderUrl', 'text'], ['FolderId', 'text'], ['FolderUrl', 'text'],
     ['AccessToken', 'text'], ['TokenIssuedAt', 'datetime'], ['TokenRevokedAt', 'datetime'],
     ['StartDate', 'date'], ['LastAttestationDate', 'date'],
+    ['InvitedAt', 'datetime'], ['ProfileConfirmedAt', 'datetime'],
     ['CreatedAt', 'datetime'], ['CreatedBy', 'text'], ['UpdatedAt', 'datetime'], ['UpdatedBy', 'text']
   ],
   Credentials: [
@@ -50,7 +53,25 @@ var SCHEMAS = {
     ['Timestamp', 'datetime'], ['Actor', 'text'], ['Action', 'text'],
     ['Entity', 'text'], ['EntityID', 'text'], ['Details', 'text']
   ],
-  ReminderLog: [['Key', 'text'], ['LastSentAt', 'datetime'], ['SendCount', 'int']]
+  ReminderLog: [['Key', 'text'], ['LastSentAt', 'datetime'], ['SendCount', 'int']],
+  // Edited by admins. The app only reads it.
+  Documents: [
+    ['DocKey', 'text'], ['Title', 'text'], ['Version', 'text'], ['EffectiveDate', 'date'],
+    ['Body', 'text'], ['Notes', 'text']
+  ],
+  // One row per acknowledgment or signed document. DocBody keeps the exact text
+  // that was signed, so a later edit to the Documents tab can't change it.
+  // Signature images are small PNG data URLs. Sensitive form answers (the
+  // background check) are never stored here, only in the signed PDF.
+  Signatures: [
+    ['SignatureID', 'text'], ['VolunteerID', 'text'], ['DocKey', 'text'], ['DocTitle', 'text'],
+    ['DocVersion', 'text'], ['DocBody', 'text'], ['Kind', 'text'], ['Status', 'text'],
+    ['SignerName', 'text'], ['SignedAt', 'datetime'], ['SignerImage', 'text'], ['FieldsJson', 'text'],
+    ['SupervisorName', 'text'], ['SupervisorEmail', 'text'], ['SupervisorTokenHash', 'text'],
+    ['SupervisorSignedAt', 'datetime'], ['SupervisorImage', 'text'],
+    ['CountersignedBy', 'text'], ['CountersignTitle', 'text'], ['CountersignedAt', 'datetime'], ['CountersignImage', 'text'],
+    ['PdfFileId', 'text'], ['PdfUrl', 'text'], ['UpdatedAt', 'datetime']
+  ]
 };
 
 /** [key, default, note]. Values are only written when a key is missing. */

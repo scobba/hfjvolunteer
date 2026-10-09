@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 // A small in-memory stand-in for the Apps Script services the app uses,
 // enough to run setup → roster edits → migration → daily job end to end.
 // Mimics Sheets turning 'yyyy-MM-dd' strings into Dates unless the column is plain text.
@@ -66,10 +68,16 @@ class Spreadsheet {
 export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {}) {
   const main = new Spreadsheet('main');
   const sent = [];
-  const state = { user };
+  const files = {};
+  const permissions = [];
+  const props = {};
+  let fileSeq = 0;
+  const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
+  const blob = (bytes, mime) => ({ bytes, mime, name: '', setName(n) { this.name = n; return this; } });
+  const state = { user, effective: 'volunteers@hfjvc.org' };
   clock = today;
   return {
-    main, sent, state,
+    main, sent, state, files, permissions,
     globals: {
       Date: GasDate,
       SpreadsheetApp: {
@@ -77,13 +85,35 @@ export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {
         openById: () => { throw new Error('spreadsheets.currentonly: openById is not allowed'); },
         flush() {},
       },
-      Session: { getActiveUser: () => ({ getEmail: () => state.user }) },
+      PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
+      Session: { getActiveUser: () => ({ getEmail: () => state.user }), getEffectiveUser: () => ({ getEmail: () => state.effective }) },
       LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
       Utilities: {
         formatDate: (d, tz, fmt) => {
-          if (fmt !== 'yyyy-MM-dd') throw new Error('fake formatDate only does yyyy-MM-dd');
-          return new Date(d.getTime()).toISOString().slice(0, 10);
+          const iso = new Date(d.getTime()).toISOString();
+          if (fmt === 'yyyy-MM-dd') return iso.slice(0, 10);
+          if (fmt === 'yyyy-MM-dd HH:mm z') return iso.slice(0, 10) + ' ' + iso.slice(11, 16) + ' UTC';
+          throw new Error('fake formatDate: unsupported format ' + fmt);
         },
+        getUuid: () => crypto.randomUUID(),
+        DigestAlgorithm: { SHA_256: 'sha256' },
+        Charset: { UTF_8: 'utf8' },
+        computeDigest: (alg, s) => signed(crypto.createHash(alg).update(String(s), 'utf8').digest()),
+        base64Decode: (s) => signed(Buffer.from(s, 'base64')),
+        newBlob: (bytes, mime) => blob(bytes, mime),
+      },
+      HtmlService: {
+        createHtmlOutput: (html) => ({ getAs: (mime) => Object.assign(blob([], mime), { html }) }),
+      },
+      Drive: {
+        Files: {
+          create: (resource, media) => {
+            const id = 'file' + ++fileSeq;
+            files[id] = Object.assign({ id }, resource, media ? { media } : {});
+            return { id };
+          },
+        },
+        Permissions: { create: (p, fileId) => { permissions.push(Object.assign({ fileId }, p)); return {}; } },
       },
       MailApp: { sendEmail: (m) => sent.push(m) },
       ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/a/macros/hfjvc.org/s/x/exec' }) },
