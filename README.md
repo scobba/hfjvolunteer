@@ -67,11 +67,54 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 6. **Start the reminders.** Choose **HFJ Volunteers → Install daily reminder
    trigger**. It runs at about 6am, Pacific time.
 
+## Automatic deploys
+
+Once this is set up, merging a pull request into `main` deploys it.
+`.github/workflows/deploy.yml` runs the tests, runs `clasp push`, and then
+moves the existing web app deployment to the new version, so the dashboard
+URL never changes. Pull requests run the tests too (`test.yml`).
+
+The deploy runs as a **dedicated account** (`volunteers@hfjvc.org`) that can
+edit only this Sheet and its script. Its login is stored as a GitHub secret,
+so even a leak of that secret couldn't reach any other Apps Script project
+(the EHR's included). The web app and the daily reminders also run as that
+account, so reminder emails come from it.
+
+One-time setup:
+
+| Where | What |
+|---|---|
+| Google Workspace admin | Create `volunteers@hfjvc.org`. |
+| The Sheet (as an admin) | Share it with `volunteers@hfjvc.org` as **Editor**, and add that address to the `Admins` tab (Name: *HFJ Volunteers*, Active ✓). |
+| https://script.google.com/home/usersettings (as volunteers@) | Turn on **Google Apps Script API**. |
+| PowerShell | `clasp logout`, then `clasp login` as volunteers@. Copy the login with `Get-Content $HOME\.clasprc.json \| Set-Clipboard`, then delete it with `Remove-Item $HOME\.clasprc.json`. |
+| GitHub → Settings → Secrets and variables → Actions | **Secret** `CLASPRC_JSON` = the copied login. **Variable** `SCRIPT_ID` = the script ID. **Variable** `DEPLOYMENT_ID` = the web app's deployment ID (below). |
+| The Sheet (as volunteers@) | Run **HFJ Volunteers → Install daily reminder trigger** and approve. |
+| Apps Script editor (as volunteers@) | **Deploy → New deployment → Web app**, *Execute as: Me*, *Anyone within hfjvc.org*. Copy the **Deployment ID** into the `DEPLOYMENT_ID` variable. The **URL** is the dashboard. |
+
+Notes:
+
+- The job does nothing until `SCRIPT_ID` is set. Without `DEPLOYMENT_ID` it
+  pushes code but leaves the web app on its old version.
+- **A change that asks for a new permission** (Drive, for uploads) still
+  needs a person to approve it once, signed in as volunteers@. Run any *HFJ
+  Volunteers* menu item and accept. Until then, the web app and the reminders
+  fail with an authorization error.
+- If a deploy fails with `invalid_grant`, the stored login has expired or
+  been revoked. Repeat the `clasp login` row and update the secret.
+- Each deploy creates an Apps Script version, and Google allows 200 per
+  project. To clear old ones, go to **Project History** in the editor.
+- To redeploy without a code change, go to GitHub → **Actions → Deploy →
+  Run workflow**.
+
 ## Migrating the old roster
 
-1. Copy the ID of `DD_BPM_Response_Vol_List` (the long part of its URL) into
-   `Settings → MigrationSourceSpreadsheetId`. Whoever runs the import needs
-   read access to it.
+1. Copy the old roster's tabs into this Sheet. The app can only open its own
+   Sheet, so it reads copies. In `DD_BPM_Response_Vol_List`, right-click each
+   of the three tabs, choose **Copy to → Existing spreadsheet**, and pick
+   *HFJ Volunteers*. The copies arrive named "Copy of …", and those are what
+   the import reads. If you rename them, list their names, separated by
+   commas, in `Settings → MigrationSourceTabs`.
 2. Choose **HFJ Volunteers → Migration: dry run**. This writes a
    `MigrationReport` tab with two sections:
    - **Column mapping:** what each source column became. *notes* means it was
@@ -83,6 +126,8 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 4. Choose **Migration: import volunteers**. Running it again is safe, because
    anyone already present (matched by email, or by name when there's no email)
    is skipped.
+5. Delete the "Copy of …" tabs and the `MigrationReport` tab once you're
+   happy with the import.
 
 What the import does with the known problems:
 
@@ -118,6 +163,22 @@ That's expected:
    set, any determination older than the interval, or with no date, counts
    as expired.
 
+## Permissions
+
+The script asks Google for only what it uses:
+
+| Permission | Why |
+|---|---|
+| See, edit, create and delete **only this spreadsheet** (`spreadsheets.currentonly`) | The roster itself. It can't open any other spreadsheet, the EHR's included. |
+| Send email as you | Reminders |
+| Manage this project's triggers | The daily reminder job |
+| Show menus in the Sheet | The *HFJ Volunteers* menu |
+| See your email address | The admin check |
+
+It has no Google Drive access. The Phase 2 upload feature will need to write
+to volunteers' Drive folders, and that will be a deliberate permission change
+when it comes.
+
 ## Settings
 
 | Key | Default | Meaning |
@@ -130,7 +191,7 @@ That's expected:
 | AttestationReminderLeadDays | 30 | Attestation reminder lead |
 | SendVolunteerReminders | FALSE | Email volunteers as well as admins |
 | AdminDomain | hfjvc.org | Admin accounts must be on this domain |
-| MigrationSourceSpreadsheetId | blank | For the one-time import |
+| MigrationSourceTabs | blank | Old roster tabs to import. Blank = every "Copy of …" tab |
 
 ## Where this goes beyond or reads into the spec
 

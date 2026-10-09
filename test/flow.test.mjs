@@ -102,22 +102,21 @@ test('non-admins are refused', () => {
 test('migration dry run and commit', () => {
   const { gas, app } = boot();
   app.setupTabs();
-  const src = gas.newSpreadsheet('src');
-  src.deleteSheet(src.getSheetByName('Sheet1'));
-  src.insertSheet('LIPs').rows = [
+  assert.throws(() => app.migrationDryRun(), /Copy the three tabs/);
+  gas.main.insertSheet('Copy of LIPs').rows = [
     ['Name', 'Email', 'Credential', 'Phone', 'Desired Frequency of 24hr call availability per month', 'Added to HFJ Google Acct?', 'Added to GDrive?'],
     ['Ann Lee', 'ann@example.com', 'MD', 8052084439.0, new GasDate('2026-01-02T00:00:00Z'), 'Y', 'y'],
     ['Bo Ng', 'bo@example.com', 'FNP', '', 2, 'Yes', '']
   ];
-  src.insertSheet('Therapists').rows = [['Name', 'Email', 'Credential'], ['Cy Diaz', 'cy@example.com', 'LMFT']];
-  src.insertSheet('Nurses').rows = [['Name', 'Email', 'Credential'], ['Dee Fox', '', 'RN']];
-  const settingsRow = app.readRows_('Settings').find((r) => r.Key === 'MigrationSourceSpreadsheetId');
-  app.updateRow_('Settings', settingsRow._row, { Value: 'src' });
+  gas.main.insertSheet('Copy of Therapists').rows = [['Name', 'Email', 'Credential'], ['Cy Diaz', 'cy@example.com', 'LMFT']];
+  gas.main.insertSheet('Copy of Nurses').rows = [['Name', 'Email', 'Credential'], ['Dee Fox', '', 'RN']];
 
   assert.equal(app.migrationDryRun(), 4);
   const report = tab(gas, 'MigrationReport').rows.map((r) => r.join('|')).join('\n');
   assert.match(report, /re-collect/);
   assert.match(report, /\(805\) 208-4439/);
+  assert.match(report, /LIPs row 2/);
+  assert.doesNotMatch(report, /Copy of/);
 
   assert.deepEqual(JSON.parse(JSON.stringify(app.migrationCommit())), { created: 4, skipped: 0 });
   assert.deepEqual(JSON.parse(JSON.stringify(app.migrationCommit())), { created: 0, skipped: 4 });

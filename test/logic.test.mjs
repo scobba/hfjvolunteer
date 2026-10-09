@@ -214,6 +214,18 @@ test('migration: three tabs merge, both Google-account columns map to Athena', (
   assert.equal(merged.length, 3);
 });
 
+test('migration reads copied-in tabs, or the ones Settings names', () => {
+  const names = ['Volunteers', 'Copy of LIPs', 'Copy of Nurses', 'Settings'];
+  assert.deepEqual([...app.migrationSourceTabNames(names, '')], ['Copy of LIPs', 'Copy of Nurses']);
+  assert.deepEqual([...app.migrationSourceTabNames(names, ' LIPs old , Nurses old ')], ['LIPs old', 'Nurses old']);
+});
+
+test('manifest only asks for the bound spreadsheet', () => {
+  const scopes = JSON.parse(readSrc('appsscript.json')).oauthScopes;
+  assert.ok(scopes.includes('https://www.googleapis.com/auth/spreadsheets.currentonly'));
+  assert.ok(!scopes.some((s) => /auth\/spreadsheets$|auth\/drive/.test(s)), scopes.join(', '));
+});
+
 test('admin page script parses', () => {
   const html = readSrc('App.html');
   const js = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));

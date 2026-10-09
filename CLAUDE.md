@@ -11,5 +11,8 @@ Google Sheet; deployed with clasp from `src/`. No PHI in this system.
   Keep it that way so it stays testable.
 - Dates in logic are `'yyyy-MM-dd'` strings; `Db.gs` converts at the sheet boundary.
 - Every write: inside `withLock_`, and logged with `logAudit_`.
+- Merging to `main` deploys (`.github/workflows/deploy.yml`): tests → `clasp push` →
+  the web app deployment moves to the new version. Never commit credentials;
+  this repo is public.
 - Tests: `npm test` (Node 20+, no dependencies). `test/fake-gas.mjs` is an
   in-memory stand-in for SpreadsheetApp etc. for end-to-end flows.

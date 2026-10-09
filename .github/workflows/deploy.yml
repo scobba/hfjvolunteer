@@ -1,0 +1,60 @@
+# Merging to main deploys: tests, then `clasp push` to the bound Apps Script
+# project, then the existing web app deployment moves to the new version
+# (same URL). Credentials belong to the dedicated deploy account, which can
+# edit only this project. Setup: README → "Automatic deploys".
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Skips cleanly until the repository variable SCRIPT_ID is set.
+    if: ${{ vars.SCRIPT_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - run: npm install -g @google/clasp@3.4.1
+
+      - name: Write clasp credentials and project file
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+          SCRIPT_ID: ${{ vars.SCRIPT_ID }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::error::The CLASPRC_JSON secret is missing. See README → Automatic deploys."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '{"scriptId":"%s","rootDir":"src"}' "$SCRIPT_ID" > .clasp.json
+
+      - name: Push code
+        run: clasp push --force
+
+      - name: Move the web app to the new version
+        env:
+          DEPLOYMENT_ID: ${{ vars.DEPLOYMENT_ID }}
+        run: |
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            echo "::notice::Code pushed. DEPLOYMENT_ID isn't set yet, so the web app wasn't updated."
+            exit 0
+          fi
+          clasp redeploy "$DEPLOYMENT_ID" --description "${GITHUB_SHA::7} $(git log -1 --format=%s | cut -c1-80)"
+
+      - name: Remove credentials
+        if: always()
+        run: rm -f "$HOME/.clasprc.json"

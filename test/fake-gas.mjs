@@ -65,20 +65,18 @@ class Spreadsheet {
 
 export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {}) {
   const main = new Spreadsheet('main');
-  const others = {};
   const sent = [];
   const state = { user };
   clock = today;
   return {
-    main, others, sent, state,
+    main, sent, state,
     globals: {
       Date: GasDate,
       SpreadsheetApp: {
         getActiveSpreadsheet: () => main,
-        openById: (id) => others[id] || (() => { throw new Error('no spreadsheet ' + id); })(),
+        openById: () => { throw new Error('spreadsheets.currentonly: openById is not allowed'); },
         flush() {},
       },
-      PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) },
       Session: { getActiveUser: () => ({ getEmail: () => state.user }) },
       LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
       Utilities: {
@@ -90,6 +88,5 @@ export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {
       MailApp: { sendEmail: (m) => sent.push(m) },
       ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/a/macros/hfjvc.org/s/x/exec' }) },
     },
-    newSpreadsheet(id) { return (others[id] = new Spreadsheet(id)); },
   };
 }

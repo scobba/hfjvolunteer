@@ -1,6 +1,11 @@
 /**
  * One-time import of DD_BPM_Response_Vol_List (spec §3, migration notes).
  *
+ * The script can only open its own Sheet, so the old roster's tabs are first
+ * copied in (right-click tab → Copy to → Existing spreadsheet). Copies arrive
+ * named "Copy of <tab>"; those are read unless Settings.MigrationSourceTabs
+ * names the tabs explicitly. Delete the copies once the import is done.
+ *
  * Run migrationDryRun() first: it writes a MigrationReport tab showing how
  * every source column was mapped and every row will be imported, with
  * warnings. Fix the mapping (MIGRATION_HEADER_OVERRIDES below) or the source
@@ -325,18 +330,34 @@ function mergeRecords(records) {
 
 // ---------------------------------------------------------------- runner (Apps Script only)
 
+var COPY_PREFIX = 'Copy of ';
+
+/** Source tab names: Settings.MigrationSourceTabs, or every "Copy of …" tab. Pure. */
+function migrationSourceTabNames(allNames, setting) {
+  var named = String(setting || '').split(',').map(function (s) { return s.trim(); }).filter(String);
+  if (named.length) return named;
+  return allNames.filter(function (n) { return n.indexOf(COPY_PREFIX) === 0; });
+}
+
 function readMigrationSource_() {
-  var id = getSettings_().MigrationSourceSpreadsheetId;
-  if (!id) throw new Error('Set MigrationSourceSpreadsheetId in the Settings tab first.');
-  var src = SpreadsheetApp.openById(id);
-  var tz = src.getSpreadsheetTimeZone();
-  return src.getSheets().map(function (sh) {
+  var ss = getSpreadsheet_();
+  var names = migrationSourceTabNames(ss.getSheets().map(function (s) { return s.getName(); }),
+    getSettings_().MigrationSourceTabs);
+  if (!names.length) {
+    throw new Error('No old roster tabs found. Copy the three tabs of DD_BPM_Response_Vol_List into this Sheet ' +
+      '(right-click each tab → Copy to → Existing spreadsheet), or list them in Settings → MigrationSourceTabs.');
+  }
+  var tz = ss.getSpreadsheetTimeZone();
+  return names.map(function (name) {
+    var sh = ss.getSheetByName(name);
+    if (!sh) throw new Error('Tab "' + name + '" (from MigrationSourceTabs) does not exist.');
     var values = sh.getDataRange().getValues().map(function (row) {
       return row.map(function (c) {
         return c instanceof Date ? { __date: Utilities.formatDate(c, tz, 'yyyy-MM-dd') } : c;
       });
     });
-    return parseSourceTab(sh.getName(), values);
+    var label = name.indexOf(COPY_PREFIX) === 0 ? name.slice(COPY_PREFIX.length) : name;
+    return parseSourceTab(label, values);
   });
 }
 
