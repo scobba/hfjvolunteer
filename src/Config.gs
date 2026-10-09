@@ -63,7 +63,7 @@ var SETTING_DEFAULTS = [
   ['AttestationReminderLeadDays', '30', 'Days before annual attestation is due that the volunteer is reminded.'],
   ['SendVolunteerReminders', 'FALSE', 'FALSE = reminders go to admins only. Flip to TRUE once backfill is done.'],
   ['AdminDomain', 'hfjvc.org', 'Admins must sign in with an account on this domain.'],
-  ['MigrationSourceSpreadsheetId', '', 'ID of DD_BPM_Response_Vol_List, for the one-time import.']
+  ['MigrationSourceTabs', '', 'Old roster tabs copied into this Sheet, comma-separated. Blank = every tab named "Copy of …".']
 ];
 
 var VOLUNTEER_STATUSES = ['Prospective', 'Active', 'Inactive', 'Departed'];

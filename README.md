@@ -69,9 +69,12 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 
 ## Migrating the old roster
 
-1. Copy the ID of `DD_BPM_Response_Vol_List` (the long part of its URL) into
-   `Settings → MigrationSourceSpreadsheetId`. Whoever runs the import needs
-   read access to it.
+1. Copy the old roster's tabs into this Sheet. The app can only open its own
+   Sheet, so it reads copies. In `DD_BPM_Response_Vol_List`, right-click each
+   of the three tabs, choose **Copy to → Existing spreadsheet**, and pick
+   *HFJ Volunteers*. The copies arrive named "Copy of …", and those are what
+   the import reads. If you rename them, list their names, separated by
+   commas, in `Settings → MigrationSourceTabs`.
 2. Choose **HFJ Volunteers → Migration: dry run**. This writes a
    `MigrationReport` tab with two sections:
    - **Column mapping:** what each source column became. *notes* means it was
@@ -83,6 +86,8 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 4. Choose **Migration: import volunteers**. Running it again is safe, because
    anyone already present (matched by email, or by name when there's no email)
    is skipped.
+5. Delete the "Copy of …" tabs and the `MigrationReport` tab once you're
+   happy with the import.
 
 What the import does with the known problems:
 
@@ -118,6 +123,22 @@ That's expected:
    set, any determination older than the interval, or with no date, counts
    as expired.
 
+## Permissions
+
+The script asks Google for only what it uses:
+
+| Permission | Why |
+|---|---|
+| See, edit, create and delete **only this spreadsheet** (`spreadsheets.currentonly`) | The roster itself. It can't open any other spreadsheet, the EHR's included. |
+| Send email as you | Reminders |
+| Manage this project's triggers | The daily reminder job |
+| Show menus in the Sheet | The *HFJ Volunteers* menu |
+| See your email address | The admin check |
+
+It has no Google Drive access. The Phase 2 upload feature will need to write
+to volunteers' Drive folders, and that will be a deliberate permission change
+when it comes.
+
 ## Settings
 
 | Key | Default | Meaning |
@@ -130,7 +151,7 @@ That's expected:
 | AttestationReminderLeadDays | 30 | Attestation reminder lead |
 | SendVolunteerReminders | FALSE | Email volunteers as well as admins |
 | AdminDomain | hfjvc.org | Admin accounts must be on this domain |
-| MigrationSourceSpreadsheetId | blank | For the one-time import |
+| MigrationSourceTabs | blank | Old roster tabs to import. Blank = every "Copy of …" tab |
 
 ## Where this goes beyond or reads into the spec
 

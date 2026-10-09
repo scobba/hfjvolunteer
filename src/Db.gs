@@ -6,11 +6,15 @@
 
 var ss_ = null;
 
+/**
+ * The Sheet this script is bound to — the only one it can open. The manifest
+ * asks for spreadsheets.currentonly, so no other spreadsheet (the EHR's
+ * included) is reachable from this project.
+ */
 function getSpreadsheet_() {
   if (ss_) return ss_;
-  var id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
-  ss_ = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss_) throw new Error('No spreadsheet: bind the script to a Sheet or set the SPREADSHEET_ID script property.');
+  ss_ = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss_) throw new Error('No spreadsheet: this script must be bound to the HFJ Volunteers Sheet.');
   return ss_;
 }
 
