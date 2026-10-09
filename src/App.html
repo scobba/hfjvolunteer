@@ -1,0 +1,412 @@
+<script>
+(function () {
+  'use strict';
+
+  var META = null;
+  var app = document.getElementById('app');
+
+  // ---------------------------------------------------------------- helpers
+
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      runner[fn].apply(runner, args);
+    });
+  }
+
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /** Only http(s) links are rendered as links. */
+  function safeUrl(u) {
+    return /^https?:\/\//i.test(String(u || '')) ? esc(u) : '';
+  }
+
+  function link(u, text) {
+    var s = safeUrl(u);
+    return s ? '<a href="' + s + '" target="_blank" rel="noopener">' + esc(text || 'open') + '</a>' : '';
+  }
+
+  function toast(msg, isError) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast' + (isError ? ' error' : '');
+    t.hidden = false;
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.hidden = true; }, isError ? 7000 : 3000);
+  }
+
+  function fail(err) {
+    toast((err && err.message) || String(err), true);
+  }
+
+  function options(list, selected, blank) {
+    return (blank ? '<option value="">' + esc(blank) + '</option>' : '') + list.map(function (o) {
+      var v = typeof o === 'string' ? o : o.value;
+      var l = typeof o === 'string' ? o : o.label;
+      return '<option value="' + esc(v) + '"' + (v === selected ? ' selected' : '') + '>' + esc(l) + '</option>';
+    }).join('');
+  }
+
+  function formData(form) {
+    var out = {};
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!el.name) return;
+      out[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+    });
+    return out;
+  }
+
+  function statusChip(status) {
+    var cls = { Complete: 'ok', Active: 'ok', Expired: 'bad', Sent: 'info', Prospective: 'info',
+      'Not started': 'warn', Inactive: '', Departed: '' }[status] || '';
+    return '<span class="chip ' + cls + '">' + esc(status || '—') + '</span>';
+  }
+
+  function eligibleChip(ok) {
+    return ok ? '<span class="chip ok">Eligible for call</span>' : '<span class="chip bad">Not eligible</span>';
+  }
+
+  function reasonsList(reasons) {
+    if (!reasons || !reasons.length) return '';
+    return '<ul class="reasons">' + reasons.map(function (r) { return '<li>' + esc(r) + '</li>'; }).join('') + '</ul>';
+  }
+
+  function vlink(id, name) {
+    return '<a href="#/v/' + encodeURIComponent(id) + '">' + esc(name) + '</a>';
+  }
+
+  function loading() { app.innerHTML = '<p class="muted">Loading…</p>'; }
+
+  // ---------------------------------------------------------------- dashboard
+
+  function renderDashboard() {
+    loading();
+    call('api_dashboard').then(function (d) {
+      var html = '<h1>Dashboard</h1>';
+      if (!META.blockIneligibleClaims) {
+        html += '<div class="banner">Eligibility is <b>warn-only</b> (BlockIneligibleClaims = FALSE) while ' +
+          'volunteers are backfilled. Flip it to TRUE in Settings once everyone is entered.</div>';
+      }
+      html += '<p class="muted small">' + d.counts.active + ' active · ' + d.counts.prospective +
+        ' onboarding · as of ' + esc(d.today) + '</p><div class="grid">';
+
+      html += block('Needs your review', d.needsReview, function (r) {
+        return '<li>' + vlink(r.volunteerId, r.name) + ' — ' + esc(r.type) +
+          (r.licenseNumber ? ' #' + esc(r.licenseNumber) : '') +
+          (r.expirationDate ? ' · exp ' + esc(r.expirationDate) : '') +
+          '<div class="small muted">' + esc(r.why) + '</div>' +
+          '<div class="small">' +
+          (r.lookupUrl ? link(r.lookupUrl, 'Look up at ' + (r.board || 'board')) : 'No online lookup') +
+          (r.uploadedDocUrl ? ' · ' + link(r.uploadedDocUrl, 'their upload') : '') +
+          ' · <a href="#/v/' + encodeURIComponent(r.volunteerId) + '">review</a></div></li>';
+      }, 'Nothing waiting for verification.');
+
+      html += block('Expiring soon', d.expiring, function (r) {
+        return '<li>' + vlink(r.volunteerId, r.name) + ' — ' + esc(r.type) + '<div class="small">' +
+          '<span class="chip ' + (r.window === 30 ? 'bad' : 'warn') + '">' + r.daysLeft + ' days</span> ' +
+          esc(r.expirationDate) + '</div></li>';
+      }, 'Nothing expires in the next 60 days.');
+
+      html += block('Expired / not eligible', d.ineligible, function (r) {
+        return '<li>' + vlink(r.volunteerId, r.name) + ' <span class="muted small">' + esc(r.credential) +
+          '</span>' + reasonsList(r.reasons) + '</li>';
+      }, 'Every active volunteer is eligible.');
+
+      html += block('Onboarding in progress', d.onboarding, function (r) {
+        return '<li>' + vlink(r.volunteerId, r.name) + ' <span class="muted small">' + esc(r.credential) +
+          ' · ' + r.done + '/' + r.total + '</span><div class="small">Stuck on: ' + esc(r.stuckOn) +
+          ' <span class="muted">(' + esc(r.stuckOwner) + ')</span></div></li>';
+      }, 'No one is onboarding.');
+
+      html += '<div class="card"><h2>Coverage gaps <span class="muted small">next 14 days</span></h2>';
+      if (!d.coverage.live) html += '<p class="muted">The call calendar arrives in Phase 3.</p>';
+      else if (!d.coverage.gaps.length) html += '<p class="muted">Every day is covered.</p>';
+      else html += '<p>' + d.coverage.gaps.map(function (g) { return '<span class="chip bad">' + esc(g) + '</span>'; }).join(' ') + '</p>';
+      html += '</div></div>';
+      app.innerHTML = html;
+    }).catch(fail);
+  }
+
+  function block(title, rows, row, empty) {
+    return '<div class="card"><h2>' + esc(title) + '<span class="count">' + rows.length + '</span></h2>' +
+      (rows.length ? '<ul class="list">' + rows.map(row).join('') + '</ul>' : '<p class="muted">' + esc(empty) + '</p>') +
+      '</div>';
+  }
+
+  // ---------------------------------------------------------------- roster
+
+  var rosterFilter = { q: '', category: '', status: 'current' };
+
+  function renderRoster() {
+    loading();
+    call('api_roster').then(function (rows) {
+      app.innerHTML = '<h1>Roster</h1><div class="filters">' +
+        '<input id="fq" type="search" placeholder="Search name or email" value="' + esc(rosterFilter.q) + '">' +
+        '<select id="fc">' + options(['LIP', 'NurseCNA', 'BehavioralHealth'], rosterFilter.category, 'All categories') + '</select>' +
+        '<select id="fs">' + options([{ value: 'current', label: 'Active + Prospective' }, { value: '', label: 'All statuses' }]
+          .concat(META.volunteerStatuses), rosterFilter.status) + '</select></div>' +
+        '<div class="card table-wrap"><table><thead><tr><th>Name</th><th>Credential</th><th>Status</th>' +
+        '<th>Eligibility</th><th class="hide-sm">Requirements</th><th class="hide-sm">Next expiration</th></tr></thead>' +
+        '<tbody id="rosterBody"></tbody></table></div>';
+      function draw() {
+        var q = rosterFilter.q.toLowerCase();
+        var shown = rows.filter(function (r) {
+          if (q && (r.Name + ' ' + (r.PreferredName || '') + ' ' + (r.Email || '')).toLowerCase().indexOf(q) === -1) return false;
+          if (rosterFilter.category && r.Category !== rosterFilter.category) return false;
+          if (rosterFilter.status === 'current') return r.Status === 'Active' || r.Status === 'Prospective';
+          return !rosterFilter.status || r.Status === rosterFilter.status;
+        }).sort(function (a, b) { return a.Name.localeCompare(b.Name); });
+        document.getElementById('rosterBody').innerHTML = shown.map(function (r) {
+          return '<tr><td>' + vlink(r.VolunteerID, r.Name) + (r.needsReview ? ' <span class="chip info">review</span>' : '') +
+            '<div class="small muted">' + esc(r.VolunteerID) + '</div></td>' +
+            '<td>' + esc(r.Credential || '?') + '</td><td>' + statusChip(r.Status) + '</td>' +
+            '<td>' + eligibleChip(r.eligible) + (r.eligible ? '' : '<div class="small muted">' + r.reasons.length + ' issue(s)</div>') + '</td>' +
+            '<td class="hide-sm">' + r.done + '/' + r.total + '</td>' +
+            '<td class="hide-sm">' + esc(r.nextExpiration || '—') + '</td></tr>';
+        }).join('') || '<tr><td colspan="6" class="muted">No volunteers match.</td></tr>';
+      }
+      document.getElementById('fq').oninput = function (e) { rosterFilter.q = e.target.value; draw(); };
+      document.getElementById('fc').onchange = function (e) { rosterFilter.category = e.target.value; draw(); };
+      document.getElementById('fs').onchange = function (e) { rosterFilter.status = e.target.value; draw(); };
+      draw();
+    }).catch(fail);
+  }
+
+  // ---------------------------------------------------------------- add volunteer
+
+  function renderNew() {
+    app.innerHTML = '<h1>Add volunteer</h1><div class="card"><form id="newForm"><div class="row">' +
+      '<label>Name<input name="Name" required></label>' +
+      '<label>Email<input name="Email" type="email"></label>' +
+      '<label>Credential<select name="Credential" required>' + options(META.credentials, '', 'Choose…') + '</select></label>' +
+      '<label>Status<select name="Status">' + options(META.volunteerStatuses, 'Prospective') + '</select></label>' +
+      '</div><div class="actions">' +
+      '<label class="check"><input type="checkbox" name="Telehealth"> Does telehealth</label>' +
+      '<label class="check"><input type="checkbox" name="Precepting"> Precepts learners</label></div>' +
+      '<p class="muted small">Use <b>Active</b> when backfilling an existing volunteer, <b>Prospective</b> for someone new. ' +
+      'Emailing the volunteer their onboarding link arrives in Phase 2.</p>' +
+      '<div class="actions"><button type="submit">Create</button></div></form></div>';
+    document.getElementById('newForm').onsubmit = function (e) {
+      e.preventDefault();
+      var btn = e.target.querySelector('button');
+      btn.disabled = true;
+      call('api_createVolunteer', formData(e.target)).then(function (id) {
+        toast('Created ' + id);
+        location.hash = '#/v/' + encodeURIComponent(id);
+      }).catch(function (err) { btn.disabled = false; fail(err); });
+    };
+  }
+
+  // ---------------------------------------------------------------- volunteer detail
+
+  function renderVolunteer(id) {
+    loading();
+    call('api_volunteer', id).then(function (d) {
+      var v = d.volunteer;
+      var html = '<p class="small"><a href="#/roster">← Roster</a></p>' +
+        '<h1>' + esc(v.Name) + (v.PreferredName ? ' <span class="muted">(' + esc(v.PreferredName) + ')</span>' : '') + '</h1>' +
+        '<p>' + esc(v.VolunteerID) + ' · ' + esc(v.Credential || 'no credential') + ' · ' + esc(v.Category || '') + ' ' +
+        statusChip(v.Status) + ' ' + eligibleChip(d.eligibility.eligible) + '</p>' +
+        (d.eligibility.eligible ? '' : '<div class="card">' + '<h2>Why not eligible</h2>' + reasonsList(d.eligibility.reasons) + '</div>');
+
+      html += credentialsCard(d) + requirementsCard(d) + attestationCard(d) + profileCard(v);
+      app.innerHTML = html;
+      wireVolunteer(d);
+    }).catch(fail);
+  }
+
+  function credentialsCard(d) {
+    var rows = d.credentials.map(function (c) {
+      var status = c.superseded ? '<span class="chip">superseded</span>'
+        : c.expired ? '<span class="chip bad">expired</span>'
+        : c.verified ? '<span class="chip ok">verified</span>' : '<span class="chip warn">unverified</span>';
+      var review = c.needsVerification && !c.superseded ?
+        '<div class="side-by-side"><div><b class="small">Their upload / record</b><div class="small">' +
+        esc(c.Type) + ' #' + esc(c.LicenseNumber || '—') + ' · exp ' + esc(c.ExpirationDate || '—') + '<br>' +
+        (c.UploadedDocUrl ? link(c.UploadedDocUrl, 'Open uploaded capture') : '<span class="muted">No upload</span>') +
+        '</div></div><div><b class="small">Primary source</b><div class="small">' +
+        (c.lookupUrl ? link(c.lookupUrl, 'Open ' + (c.board || 'board') + ' lookup') : '<span class="muted">No online lookup for this type</span>') +
+        '<label>Your capture (Drive link)<input data-src="' + esc(c.CredentialID) + '" value="' + esc(c.SourceDocUrl) + '" placeholder="https://drive.google.com/…"></label>' +
+        '<div class="actions"><button data-verify="' + esc(c.CredentialID) + '">Mark verified against primary source</button></div>' +
+        '</div></div></div>' : '';
+      return '<li><b>' + esc(c.Type) + '</b> ' + status +
+        '<div class="small">#' + esc(c.LicenseNumber || '—') + ' · ' + esc(c.IssuingState || '') +
+        ' · expires ' + esc(c.ExpirationDate || '—') +
+        (c.verified ? '<br>Verified against primary source by ' + esc(c.VerifiedBy) + ' on ' + esc(c.VerifiedDate) +
+          (c.SourceDocUrl ? ' · ' + link(c.SourceDocUrl, 'capture') : '') : '') +
+        (c.Notes ? '<br><span class="muted">' + esc(c.Notes) + '</span>' : '') +
+        '</div>' + review +
+        '<div class="actions"><button class="secondary" data-editcred="' + esc(c.CredentialID) + '">Edit</button>' +
+        '<button class="danger" data-delcred="' + esc(c.CredentialID) + '">Delete</button></div></li>';
+    }).join('');
+    return '<div class="card"><h2>Credentials</h2>' +
+      (rows ? '<ul class="list">' + rows + '</ul>' : '<p class="muted">No credentials on file.</p>') +
+      '<div class="actions"><button class="secondary" id="addCred">Add credential</button></div>' +
+      '<div id="credFormHost"></div></div>';
+  }
+
+  function credentialForm(c) {
+    c = c || { IssuingState: 'CA' };
+    return '<form id="credForm" class="card"><h3>' + (c.CredentialID ? 'Edit ' + esc(c.CredentialID) : 'New credential') + '</h3>' +
+      '<div class="row">' +
+      '<label>Type<select name="Type" required>' + options(META.credentialTypes.map(function (t) { return t.type; }), c.Type, 'Choose…') + '</select></label>' +
+      '<label>License / cert number<input name="LicenseNumber" value="' + esc(c.LicenseNumber) + '"></label>' +
+      '<label>Issuing state<input name="IssuingState" value="' + esc(c.IssuingState) + '" maxlength="2"></label>' +
+      '<label>Expiration date<input type="date" name="ExpirationDate" value="' + esc(c.ExpirationDate) + '"></label>' +
+      '<label>Volunteer\'s upload (Drive link)<input name="UploadedDocUrl" value="' + esc(c.UploadedDocUrl) + '"></label>' +
+      '<label>Your board capture (Drive link)<input name="SourceDocUrl" value="' + esc(c.SourceDocUrl) + '"></label>' +
+      '</div><label>Notes<textarea name="Notes">' + esc(c.Notes) + '</textarea></label>' +
+      '<div class="actions"><label class="check"><input type="checkbox" name="verifyNow"> I checked this against the board\'s own lookup just now</label></div>' +
+      (c.VerifiedBy ? '<p class="small muted">Changing type, number, state or expiration clears the existing verification.</p>' : '') +
+      '<div class="actions"><button type="submit">Save</button><button type="button" class="secondary" id="cancelCred">Cancel</button></div></form>';
+  }
+
+  function requirementsCard(d) {
+    var rows = d.requirements.map(function (r) {
+      var head = '<b>' + esc(r.Requirement) + '</b> ' + statusChip(r.applies ? r.computedStatus : r.Status) +
+        (r.applies ? '' : ' <span class="chip">no longer required</span>') +
+        ' <span class="muted small">' + esc(r.owner) + '</span>';
+      var info = '<div class="small">' +
+        (r.reason ? '<span style="color:var(--bad)">' + esc(r.reason) + '</span><br>' : '') +
+        (r.CompletedDate ? 'Completed ' + esc(r.CompletedDate) + (r.CompletedBy ? ' by ' + esc(r.CompletedBy) : '') + ' ' : '') +
+        (r.Detail ? '· ' + esc(r.Detail) + ' ' : '') +
+        (r.DocumentUrl ? '· ' + link(r.DocumentUrl, 'document') : '') +
+        (r.Notes ? '<br><span class="muted">' + esc(r.Notes) + '</span>' : '') + '</div>';
+      if (r.owner === 'system') {
+        return '<li>' + head + info + '<div class="small muted">Calculated from ' +
+          (r.RequirementKey === 'license' ? 'verified credentials' : 'the attestation date') + '.</div></li>';
+      }
+      var detail = '';
+      if (r.RequirementKey === 'bg_determination') {
+        detail = '<label>Determination<select name="Detail">' + options(META.backgroundDeterminations, r.Detail, '—') + '</select></label>';
+      } else if (r.RequirementKey === 'supervisor') {
+        detail = '<label>Supervisor name<input name="Detail" value="' + esc(r.Detail) + '"></label>';
+      } else if (r.RequirementKey === 'school') {
+        detail = '<label>School / program<input name="Detail" value="' + esc(r.Detail) + '"></label>';
+      }
+      return '<li>' + head + info + '<details><summary class="small">Update</summary>' +
+        '<form class="req-edit" data-req="' + esc(r.RequirementID) + '">' +
+        '<label>Status<select name="Status">' + options(META.requirementStatuses, r.Status) + '</select></label>' +
+        '<label>Completed<input type="date" name="CompletedDate" value="' + esc(r.CompletedDate) + '"></label>' +
+        '<label>Signed document (link)<input name="DocumentUrl" value="' + esc(r.DocumentUrl) + '"></label>' +
+        detail +
+        '<label>Notes<input name="Notes" value="' + esc(r.Notes) + '"></label>' +
+        '<div><button type="submit">Save</button></div></form>' +
+        (r.RequirementKey === 'bg_determination' ? '<p class="small muted">Record the outcome, date and reviewer only. Never paste the report or any criminal history here.</p>' : '') +
+        '</details></li>';
+    }).join('');
+    return '<div class="card"><h2>Requirements</h2>' +
+      (rows ? '<ul class="list">' + rows + '</ul>' : '<p class="muted">Set a recognized credential to generate requirements.</p>') + '</div>';
+  }
+
+  function attestationCard(d) {
+    var v = d.volunteer;
+    return '<div class="card"><h2>Annual attestation</h2><p class="small">' +
+      (v.LastAttestationDate ? 'Last attested ' + esc(v.LastAttestationDate) + ' · next due ' + esc(d.attestationDue) : 'No attestation on record.') +
+      '</p><form id="attestForm" class="actions"><input type="date" name="date" required>' +
+      '<button type="submit" class="secondary">Record attestation</button></form>' +
+      '<p class="small muted">Volunteers attest themselves through their link from Phase 2. Until then, record the date of a paper or emailed attestation here. ' +
+      'Recording it re-prompts verification of every credential.</p></div>';
+  }
+
+  function profileCard(v) {
+    return '<div class="card"><h2>Profile</h2><form id="profileForm"><div class="row">' +
+      '<label>Name<input name="Name" value="' + esc(v.Name) + '" required></label>' +
+      '<label>Preferred name<input name="PreferredName" value="' + esc(v.PreferredName) + '"></label>' +
+      '<label>Credential<select name="Credential">' + options(META.credentials, v.Credential, 'Choose…') + '</select></label>' +
+      '<label>Status<select name="Status">' + options(META.volunteerStatuses, v.Status) + '</select></label>' +
+      '<label>Email<input name="Email" type="email" value="' + esc(v.Email) + '"></label>' +
+      '<label>Phone<input name="Phone" value="' + esc(v.Phone) + '"></label>' +
+      '<label>Spanish fluency<input name="SpanishFluency" value="' + esc(v.SpanishFluency) + '"></label>' +
+      '<label>Call target per month<input name="CallTargetPerMonth" type="number" min="0" step="1" value="' + esc(v.CallTargetPerMonth) + '"></label>' +
+      '<label>Start date<input name="StartDate" type="date" value="' + esc(v.StartDate) + '"></label>' +
+      '<label>Drive folder<input name="DriveFolderUrl" value="' + esc(v.DriveFolderUrl) + '"></label>' +
+      '</div><div class="actions">' +
+      '<label class="check"><input type="checkbox" name="OnSignal"' + (v.OnSignal ? ' checked' : '') + '> On Signal</label>' +
+      '<label class="check"><input type="checkbox" name="Telehealth"' + (v.Telehealth ? ' checked' : '') + '> Does telehealth</label>' +
+      '<label class="check"><input type="checkbox" name="Precepting"' + (v.Precepting ? ' checked' : '') + '> Precepts learners</label>' +
+      (v.DriveFolderUrl ? link(v.DriveFolderUrl, 'Open Drive folder') : '') +
+      '</div><label>Notes<textarea name="Notes">' + esc(v.Notes) + '</textarea></label>' +
+      '<div class="actions"><button type="submit">Save profile</button></div></form></div>';
+  }
+
+  function wireVolunteer(d) {
+    var id = d.volunteer.VolunteerID;
+    var reload = function (msg) { toast(msg || 'Saved'); renderVolunteer(id); };
+
+    function showCredForm(c) {
+      var host = document.getElementById('credFormHost');
+      host.innerHTML = credentialForm(c);
+      host.scrollIntoView({ behavior: 'smooth' });
+      document.getElementById('cancelCred').onclick = function () { host.innerHTML = ''; };
+      document.getElementById('credForm').onsubmit = function (e) {
+        e.preventDefault();
+        var f = formData(e.target);
+        var verifyNow = f.verifyNow; delete f.verifyNow;
+        e.target.querySelector('button[type=submit]').disabled = true;
+        call('api_saveCredential', id, c && c.CredentialID, f, verifyNow).then(function () { reload(); })
+          .catch(function (err) { e.target.querySelector('button[type=submit]').disabled = false; fail(err); });
+      };
+    }
+
+    document.getElementById('addCred').onclick = function () { showCredForm(null); };
+    app.querySelectorAll('[data-editcred]').forEach(function (b) {
+      b.onclick = function () {
+        showCredForm(d.credentials.filter(function (c) { return c.CredentialID === b.dataset.editcred; })[0]);
+      };
+    });
+    app.querySelectorAll('[data-delcred]').forEach(function (b) {
+      b.onclick = function () {
+        if (!confirm('Delete this credential? This is logged.')) return;
+        call('api_deleteCredential', b.dataset.delcred).then(function () { reload('Deleted'); }).catch(fail);
+      };
+    });
+    app.querySelectorAll('[data-verify]').forEach(function (b) {
+      b.onclick = function () {
+        var src = app.querySelector('[data-src="' + b.dataset.verify + '"]');
+        b.disabled = true;
+        call('api_verifyCredential', b.dataset.verify, src ? src.value : '').then(function () { reload('Verified'); })
+          .catch(function (err) { b.disabled = false; fail(err); });
+      };
+    });
+    app.querySelectorAll('form[data-req]').forEach(function (f) {
+      f.onsubmit = function (e) {
+        e.preventDefault();
+        call('api_updateRequirement', f.dataset.req, formData(f)).then(function () { reload(); }).catch(fail);
+      };
+    });
+    document.getElementById('attestForm').onsubmit = function (e) {
+      e.preventDefault();
+      call('api_recordAttestation', id, formData(e.target).date).then(function () { reload('Attestation recorded'); }).catch(fail);
+    };
+    document.getElementById('profileForm').onsubmit = function (e) {
+      e.preventDefault();
+      call('api_updateVolunteer', id, formData(e.target)).then(function () { reload(); }).catch(fail);
+    };
+  }
+
+  // ---------------------------------------------------------------- router
+
+  function route() {
+    var h = location.hash.replace(/^#\/?/, '');
+    if (h === 'roster') return renderRoster();
+    if (h === 'new') return renderNew();
+    if (h.indexOf('v/') === 0) return renderVolunteer(decodeURIComponent(h.slice(2)));
+    renderDashboard();
+  }
+
+  window.addEventListener('hashchange', route);
+  call('api_bootstrap').then(function (meta) {
+    META = meta;
+    document.getElementById('sheetLink').href = meta.spreadsheetUrl;
+    route();
+  }).catch(function (err) {
+    app.innerHTML = '<div class="card error-card"><h2>Could not load</h2><p>' + esc(err.message || err) + '</p></div>';
+  });
+})();
+</script>

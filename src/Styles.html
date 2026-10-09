@@ -1,0 +1,72 @@
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --ink: #1d2430; --muted: #667085; --line: #e3e6eb;
+    --brand: #1f5f8b; --ok: #1a7f4b; --ok-bg: #e6f4ec; --warn: #9a6200; --warn-bg: #fdf3dc;
+    --bad: #b42318; --bad-bg: #fdecea; --info-bg: #e8f1f8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--brand); }
+  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 12px 16px;
+    background: var(--brand); }
+  .top a { color: #fff; text-decoration: none; }
+  .brand { font-weight: 700; font-size: 17px; }
+  .top nav { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  .top nav a { opacity: .85; }
+  .top nav a:hover { opacity: 1; text-decoration: underline; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 22px; margin: 4px 0 12px; }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  h3 { font-size: 15px; margin: 12px 0 6px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px;
+    margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+  .grid .card { margin: 0; }
+  .count { display: inline-block; min-width: 22px; padding: 0 7px; border-radius: 11px; background: var(--line);
+    font-size: 13px; text-align: center; margin-left: 6px; }
+  .banner { padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; background: var(--warn-bg); color: var(--warn); }
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li { padding: 8px 0; border-top: 1px solid var(--line); }
+  ul.list li:first-child { border-top: 0; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600;
+    background: var(--line); white-space: nowrap; }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn); }
+  .chip.bad { background: var(--bad-bg); color: var(--bad); }
+  .chip.info { background: var(--info-bg); color: var(--brand); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); border-top: 0; }
+  .table-wrap { overflow-x: auto; }
+  form .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); }
+  label > input, label > select, label > textarea { display: block; width: 100%; margin-top: 3px; }
+  label.check { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 14px; }
+  input, select, textarea { font: inherit; padding: 6px 8px; border: 1px solid #c9ced6; border-radius: 6px;
+    background: #fff; color: var(--ink); }
+  textarea { min-height: 64px; }
+  button, .btn { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--brand);
+    background: var(--brand); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
+  button.secondary, .btn.secondary { background: #fff; color: var(--brand); }
+  button.danger { background: #fff; color: var(--bad); border-color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+  .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+  .side-by-side > div { border: 1px dashed var(--line); border-radius: 6px; padding: 8px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .filters input { min-width: 200px; }
+  .reasons { margin: 4px 0 0; padding-left: 18px; color: var(--bad); font-size: 13px; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink);
+    color: #fff; padding: 10px 16px; border-radius: 8px; max-width: calc(100% - 32px); z-index: 10; }
+  .toast.error { background: var(--bad); }
+  .error-card { border-color: var(--bad); }
+  .req-edit { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 10px;
+    align-items: end; }
+  @media (max-width: 600px) {
+    .side-by-side { grid-template-columns: 1fr; }
+    th.hide-sm, td.hide-sm { display: none; }
+  }
+</style>

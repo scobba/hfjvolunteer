@@ -1,0 +1,8 @@
+{
+  "name": "hfjvolunteer",
+  "private": true,
+  "description": "HFJ volunteer credentialing and scheduling (Google Apps Script)",
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}
