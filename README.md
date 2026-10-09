@@ -67,6 +67,46 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 6. **Start the reminders.** Choose **HFJ Volunteers → Install daily reminder
    trigger**. It runs at about 6am, Pacific time.
 
+## Automatic deploys
+
+Once this is set up, merging a pull request into `main` deploys it.
+`.github/workflows/deploy.yml` runs the tests, runs `clasp push`, and then
+moves the existing web app deployment to the new version, so the dashboard
+URL never changes. Pull requests run the tests too (`test.yml`).
+
+The deploy runs as a **dedicated account** (`volunteers@hfjvc.org`) that can
+edit only this Sheet and its script. Its login is stored as a GitHub secret,
+so even a leak of that secret couldn't reach any other Apps Script project
+(the EHR's included). The web app and the daily reminders also run as that
+account, so reminder emails come from it.
+
+One-time setup:
+
+| Where | What |
+|---|---|
+| Google Workspace admin | Create `volunteers@hfjvc.org`. |
+| The Sheet (as an admin) | Share it with `volunteers@hfjvc.org` as **Editor**, and add that address to the `Admins` tab (Name: *HFJ Volunteers*, Active ✓). |
+| https://script.google.com/home/usersettings (as volunteers@) | Turn on **Google Apps Script API**. |
+| PowerShell | `clasp logout`, then `clasp login` as volunteers@. Copy the login with `Get-Content $HOME\.clasprc.json \| Set-Clipboard`, then delete it with `Remove-Item $HOME\.clasprc.json`. |
+| GitHub → Settings → Secrets and variables → Actions | **Secret** `CLASPRC_JSON` = the copied login. **Variable** `SCRIPT_ID` = the script ID. **Variable** `DEPLOYMENT_ID` = the web app's deployment ID (below). |
+| The Sheet (as volunteers@) | Run **HFJ Volunteers → Install daily reminder trigger** and approve. |
+| Apps Script editor (as volunteers@) | **Deploy → New deployment → Web app**, *Execute as: Me*, *Anyone within hfjvc.org*. Copy the **Deployment ID** into the `DEPLOYMENT_ID` variable. The **URL** is the dashboard. |
+
+Notes:
+
+- The job does nothing until `SCRIPT_ID` is set. Without `DEPLOYMENT_ID` it
+  pushes code but leaves the web app on its old version.
+- **A change that asks for a new permission** (Drive, for uploads) still
+  needs a person to approve it once, signed in as volunteers@. Run any *HFJ
+  Volunteers* menu item and accept. Until then, the web app and the reminders
+  fail with an authorization error.
+- If a deploy fails with `invalid_grant`, the stored login has expired or
+  been revoked. Repeat the `clasp login` row and update the secret.
+- Each deploy creates an Apps Script version, and Google allows 200 per
+  project. To clear old ones, go to **Project History** in the editor.
+- To redeploy without a code change, go to GitHub → **Actions → Deploy →
+  Run workflow**.
+
 ## Migrating the old roster
 
 1. Copy the old roster's tabs into this Sheet. The app can only open its own
