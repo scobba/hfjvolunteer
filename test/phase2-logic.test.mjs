@@ -110,3 +110,34 @@ test('tokens and file names', () => {
     '2026-10-09 Lee, Ann Marie – Addendum A- NP-PA v1.0.pdf');
   assert.equal(app.volunteerFolderName(vol()), 'Lee, Ann (HFJV-00001)');
 });
+
+test('sharing guard: only named admins on the admin domain, never public', () => {
+  const admins = ['anthony@hfjvc.org', 'outsider@gmail.com'];
+  const ok = { role: 'writer', type: 'user', emailAddress: 'Anthony@hfjvc.org' };
+  assert.equal(app.assertAllowedShare(ok, admins, 'hfjvc.org'), true);
+  const bad = [
+    { role: 'reader', type: 'anyone' },
+    { role: 'reader', type: 'anyone', emailAddress: 'anthony@hfjvc.org' },
+    { role: 'writer', type: 'domain', emailAddress: 'anthony@hfjvc.org' },
+    { role: 'writer', type: 'group', emailAddress: 'anthony@hfjvc.org' },
+    { role: 'owner', type: 'user', emailAddress: 'anthony@hfjvc.org' },
+    { role: 'writer', type: 'user', emailAddress: 'outsider@gmail.com' },
+    { role: 'writer', type: 'user', emailAddress: 'stranger@hfjvc.org' },
+    Object.assign({ allowFileDiscovery: true }, ok)
+  ];
+  for (const p of bad) assert.throws(() => app.assertAllowedShare(p, admins, 'hfjvc.org'), /Refusing to share/, JSON.stringify(p));
+  assert.throws(() => app.assertAllowedShare(ok, admins, ''), /Refusing/);
+});
+
+test('source: Drive sharing happens in exactly one place, behind the guard', async () => {
+  const fs = await import('node:fs');
+  const dir = new URL('../src/', import.meta.url);
+  const all = fs.readdirSync(dir).filter((f) => /\.(gs|html)$/.test(f))
+    .map((f) => [f, fs.readFileSync(new URL(f, dir), 'utf8')]);
+  const hits = (re) => all.filter(([, src]) => re.test(src)).map(([f]) => f);
+  assert.deepEqual(hits(/Permissions\.(create|update)/), ['DriveStore.gs']);
+  assert.deepEqual(hits(/['"]anyone['"]|ANYONE_WITH_LINK|setSharing|addViewer|addEditor|allowFileDiscovery|publishAuto/), []);
+  const drive = all.find(([f]) => f === 'DriveStore.gs')[1];
+  assert.equal((drive.match(/Permissions\.create/g) || []).length, 1);
+  assert.match(drive, /assertAllowedShare\(permission, admins, domain\);\s*Drive\.Permissions\.create\(permission/);
+});
