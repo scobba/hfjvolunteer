@@ -40,6 +40,7 @@ test('invite → portal → license upload → sign/acknowledge → countersign 
 
   let s = app.portal_bootstrap(token);
   assert.equal(s.volunteer.Name, 'Ann Lee');
+  assert.equal(s.lookups['CA Physician & Surgeon License'].url, 'https://www.mbc.ca.gov/License-Verification/default.aspx');
   assert.ok(gas.files[app.readRows_('Volunteers')[0].FolderId], 'their own folder exists');
   assert.equal(Object.values(gas.files).find((f) => f.name === 'HFJ Volunteers').mimeType, 'application/vnd.google-apps.folder');
   assert.ok(gas.permissions.some((p) => p.emailAddress === 'anthony@hfjvc.org'), 'admins can open the folders');

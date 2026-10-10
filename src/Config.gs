@@ -99,7 +99,7 @@ var DCA_SEARCH = 'https://search.dca.ca.gov/';
  * before go-live; they're here so changing one doesn't touch logic.
  */
 var CREDENTIAL_TYPES = {
-  'CA Physician & Surgeon License': { board: 'Medical Board of California', lookupUrl: DCA_SEARCH },
+  'CA Physician & Surgeon License': { board: 'Medical Board of California', lookupUrl: 'https://www.mbc.ca.gov/License-Verification/default.aspx' },
   'CA Osteopathic Physician & Surgeon License': { board: 'Osteopathic Medical Board of California', lookupUrl: DCA_SEARCH },
   'CA Physician Assistant License': { board: 'Physician Assistant Board', lookupUrl: DCA_SEARCH },
   'CA Registered Nurse License': { board: 'Board of Registered Nursing', lookupUrl: DCA_SEARCH },
