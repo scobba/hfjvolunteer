@@ -74,9 +74,13 @@ jobs:
           if [ -n "$VOLUNTEER_DEPLOYMENT_ID" ]; then
             clasp redeploy "$VOLUNTEER_DEPLOYMENT_ID" --description "$desc"
           else
-            out=$(clasp create-deployment --description "$desc")
+            out=$(clasp create-deployment --description "$desc" 2>&1) || true
             echo "$out"
             id=$(echo "$out" | grep -o 'AKfy[A-Za-z0-9_-]*' | head -1)
+            if [ -z "$id" ]; then
+              echo "::error::Couldn't create the volunteer portal deployment (see above). If it says ANYONE access is disabled, see README → Automatic deploys."
+              exit 1
+            fi
             echo "::notice::Created the volunteer portal deployment. Add the repository variable VOLUNTEER_DEPLOYMENT_ID = $id, then re-run this job."
           fi
 

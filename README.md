@@ -177,10 +177,14 @@ Notes:
   Access is set per version, so each deploy pushes twice: once per access
   setting. Admin pages still refuse anyone who isn't a signed-in hfjvc.org
   admin, whichever URL they use.
-- If the portal link asks volunteers to sign in to Google, the Workspace
-  admin console isn't letting Apps Script web apps be shared outside
-  hfjvc.org. That's under **Apps → Google Workspace → Drive and Docs →
-  Sharing settings**.
+- If the deploy says *"ANYONE access has been disabled by your domain
+  administrator"*, or the portal link asks volunteers to sign in, Workspace
+  isn't letting web apps be opened from outside hfjvc.org. Allow it **only
+  for volunteers@**: put that account in its own organizational unit, then in
+  the admin console go to **Apps → Google Workspace → Drive and Docs →
+  Sharing settings**. For that unit, turn on *Sharing outside of hfjvc.org*
+  and allow files and published web content to be visible to anyone with
+  the link. Everyone else keeps the current rules.
 - Each deploy creates two Apps Script versions, and Google allows 200 per
   project. To clear old ones, go to **Project History** in the editor.
 - To redeploy without a code change, go to GitHub → **Actions → Deploy →
