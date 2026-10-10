@@ -57,6 +57,11 @@ function portalState_(v) {
         ExpirationDate: c.ExpirationDate, uploaded: !!c.UploadedDocUrl, verified: isVerified(c) };
     }),
     credentialTypes: Object.keys(CREDENTIAL_TYPES),
+    // Where volunteers look themselves up to make the copy they upload.
+    lookups: Object.keys(CREDENTIAL_TYPES).reduce(function (m, t) {
+      if (/^https:\/\//.test(CREDENTIAL_TYPES[t].lookupUrl)) m[t] = { board: CREDENTIAL_TYPES[t].board, url: CREDENTIAL_TYPES[t].lookupUrl };
+      return m;
+    }, {}),
     done: volunteerPartComplete(tasks)
   };
 }
