@@ -39,6 +39,9 @@ function onboardingTasks(v, reqRows, creds, signatures, documents, today, opts) 
     if (!prev || String(s.SignedAt) > String(prev.SignedAt)) sigsByDoc[s.DocKey] = s;
   });
 
+  var outdated = {};
+  outdatedDocuments(v, signatures, documents, today).forEach(function (o) { outdated[o.docKey] = o; });
+
   documentsFor(v).forEach(function (docKey) {
     var form = DOC_FORMS[docKey];
     var doc = documents[docKey];
@@ -66,6 +69,12 @@ function onboardingTasks(v, reqRows, creds, signatures, documents, today, opts) 
       } else if (sig && sig.Status === SIGNATURE_STATUS.AWAITING_HFJ) {
         task.status = 'waiting'; task.note = 'Signed. Waiting for HFJ to countersign.';
       }
+    }
+    if (outdated[docKey]) {
+      var o = outdated[docKey];
+      task.status = 'todo'; task.outdated = true;
+      task.note = 'Updated to version ' + o.version + ' (you ' + (o.kind === 'ack' ? 'acknowledged' : 'signed') +
+        ' version ' + o.signedVersion + '). Please review it and ' + (o.kind === 'ack' ? 'acknowledge' : 'sign') + ' it again.';
     }
     if (task.status === 'todo' && !doc) { task.status = 'unavailable'; task.note = 'HFJ is finalizing this document.'; }
     tasks.push(task);

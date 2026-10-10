@@ -75,3 +75,53 @@ function planReminders(data, today, opts, log) {
 
   return out;
 }
+
+/**
+ * Emails asking volunteers to review documents that changed since they
+ * signed (see outdatedDocuments). One email per volunteer covers every
+ * outdated document; it repeats every `intervalDays` until they're done, and
+ * a new update to any document starts the count again. Volunteer-only: the
+ * dashboard shows admins who is still outstanding.
+ *
+ * sigsBy: { VolunteerID: [signature rows] }  documents: getDocuments_() shape
+ */
+function planDocumentUpdates(volunteers, sigsBy, documents, today, intervalDays, log) {
+  var out = [];
+  volunteers.forEach(function (v) {
+    if (CURRENT_STATUSES.indexOf(v.Status) === -1 || !v.Email) return;
+    var stale = outdatedDocuments(v, sigsBy[v.VolunteerID] || [], documents, today);
+    if (!stale.length) return;
+    var key = 'docupdate|' + v.VolunteerID + '|' + stale.map(function (o) { return o.docKey + '@' + o.version; }).join(',');
+    var last = log[key] && log[key].lastSent;
+    if (last && daysBetween(last, today) < intervalDays) return;
+    out.push({ key: key, volunteerId: v.VolunteerID, documents: stale, reminder: !!last });
+  });
+  return out;
+}
+
+/** The email for one planDocumentUpdates item. `link` is the volunteer's fresh personal link. */
+function documentUpdateEmail(v, item, link) {
+  var first = String(v.PreferredName || v.Name || '').split(' ')[0];
+  var one = item.documents.length === 1;
+  return {
+    subject: (item.reminder ? 'Reminder: ' : '') + 'HFJ updated ' + (one ? item.documents[0].title : 'documents you signed'),
+    body: [
+      'Hi ' + first + ',',
+      '',
+      'HFJ has updated ' + (one ? 'a document' : 'documents') + ' you previously ' +
+        (item.documents.every(function (o) { return o.kind === 'ack'; }) ? 'acknowledged' : 'signed') +
+        '. Please review the new version and confirm:',
+      ''
+    ].concat(item.documents.map(function (o) {
+      return '- ' + o.title + ' (version ' + o.version + '): please ' + (o.kind === 'ack' ? 'acknowledge' : 'sign') + ' it again';
+    }), [
+      '',
+      link,
+      '',
+      'It takes a few minutes. This link is personal to you and replaces any earlier HFJ link. Please don\'t forward it.',
+      '',
+      'Thank you,',
+      'Healthcare for Justice'
+    ]).join('\n')
+  };
+}
