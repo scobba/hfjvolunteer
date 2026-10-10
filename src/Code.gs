@@ -9,7 +9,7 @@
 function doGet(e) {
   var p = (e && e.parameter) || {};
   if (p.t || p.s) {
-    var page = HtmlService.createTemplateFromFile('Portal');
+    var page = HtmlService.createTemplateFromFile('PortalPage');
     page.mode = p.s ? 'supervisor' : 'volunteer';
     page.token = isTokenShaped(p.s || p.t) ? String(p.s || p.t) : '';
     return page.evaluate()

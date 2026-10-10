@@ -234,3 +234,10 @@ test('admin page script parses', () => {
   const js = html.slice(html.indexOf('<script>') + 8, html.lastIndexOf('</script>'));
   assert.doesNotThrow(() => new Function(js));
 });
+
+test('no two files in src/ share a name (Apps Script ignores the extension)', async () => {
+  const fs = await import('node:fs');
+  const names = fs.readdirSync(new URL('../src/', import.meta.url))
+    .filter((f) => /\.(gs|html)$/.test(f)).map((f) => f.replace(/\.(gs|html)$/, '').toLowerCase());
+  assert.deepEqual(names.filter((n, i) => names.indexOf(n) !== i), []);
+});
