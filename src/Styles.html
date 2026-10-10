@@ -44,7 +44,8 @@
   form .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px 14px; }
   label { display: block; font-size: 13px; color: var(--muted); }
   label > input, label > select, label > textarea { display: block; width: 100%; margin-top: 3px; }
-  label.check { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 14px; }
+  label.check { display: flex; align-items: flex-start; gap: 8px; color: var(--ink); font-size: 14px; }
+  label.check > input { display: inline-block; width: auto; flex: 0 0 auto; margin: 3px 0 0; }
   input, select, textarea { font: inherit; padding: 6px 8px; border: 1px solid #c9ced6; border-radius: 6px;
     background: #fff; color: var(--ink); }
   textarea { min-height: 64px; }
@@ -65,6 +66,9 @@
   .error-card { border-color: var(--bad); }
   .req-edit { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 10px;
     align-items: end; }
+  .small-btn { padding: 3px 10px; font-size: 13px; }
+  .docpreview { border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; margin-top: 6px; max-height: 360px; overflow-y: auto; }
+  .docpreview h1 { font-size: 17px; } .docpreview h2 { font-size: 14px; }
   @media (max-width: 600px) {
     .side-by-side { grid-template-columns: 1fr; }
     th.hide-sm, td.hide-sm { display: none; }

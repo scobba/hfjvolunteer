@@ -92,6 +92,13 @@
         html += '<div class="banner">Eligibility is <b>warn-only</b> (BlockIneligibleClaims = FALSE) while ' +
           'volunteers are backfilled. Flip it to TRUE in Settings once everyone is entered.</div>';
       }
+      if (!META.portalReady) {
+        html += '<div class="banner">The volunteer portal isn\'t deployed yet, so links can\'t be sent. See README → Automatic deploys (VOLUNTEER_DEPLOYMENT_ID).</div>';
+      }
+      if (d.missingDocuments && d.missingDocuments.length) {
+        html += '<div class="banner">Not yet in the Documents tab: ' + esc(d.missingDocuments.join(', ')) +
+          '. Volunteers will see these as “not yet available”. <a href="#/documents">Documents</a></div>';
+      }
       html += '<p class="muted small">' + d.counts.active + ' active · ' + d.counts.prospective +
         ' onboarding · as of ' + esc(d.today) + '</p><div class="grid">';
 
@@ -105,6 +112,13 @@
           (r.uploadedDocUrl ? ' · ' + link(r.uploadedDocUrl, 'their upload') : '') +
           ' · <a href="#/v/' + encodeURIComponent(r.volunteerId) + '">review</a></div></li>';
       }, 'Nothing waiting for verification.');
+
+      html += block('Awaiting HFJ countersignature', d.awaitingHfj, function (r) {
+        return '<li><label class="check"><input type="checkbox" data-cs="' + esc(r.signatureId) + '"> ' +
+          vlink(r.volunteerId, r.name) + ' — ' + esc(r.title) + ' <span class="muted small">v' + esc(r.version) +
+          ', signed ' + esc(r.signedAt) + '</span></label></li>';
+      }, 'Nothing waiting for a countersignature.', d.awaitingHfj.length ?
+        '<div class="actions"><button class="secondary" id="csAll">Select all</button><button id="csGo">Countersign selected</button></div><div id="csHost"></div>' : '');
 
       html += block('Expiring soon', d.expiring, function (r) {
         return '<li>' + vlink(r.volunteerId, r.name) + ' — ' + esc(r.type) + '<div class="small">' +
@@ -129,13 +143,44 @@
       else html += '<p>' + d.coverage.gaps.map(function (g) { return '<span class="chip bad">' + esc(g) + '</span>'; }).join(' ') + '</p>';
       html += '</div></div>';
       app.innerHTML = html;
+      var all = document.getElementById('csAll');
+      if (all) {
+        all.onclick = function () { app.querySelectorAll('[data-cs]').forEach(function (c) { c.checked = true; }); };
+        document.getElementById('csGo').onclick = function () {
+          var ids = Array.prototype.map.call(app.querySelectorAll('[data-cs]:checked'), function (c) { return c.dataset.cs; });
+          if (!ids.length) return fail(new Error('Tick the documents to countersign.'));
+          countersignForm(document.getElementById('csHost'), ids, renderDashboard);
+        };
+      }
     }).catch(fail);
   }
 
-  function block(title, rows, row, empty) {
+  function block(title, rows, row, empty, footer) {
     return '<div class="card"><h2>' + esc(title) + '<span class="count">' + rows.length + '</span></h2>' +
       (rows.length ? '<ul class="list">' + rows.map(row).join('') + '</ul>' : '<p class="muted">' + esc(empty) + '</p>') +
-      '</div>';
+      (footer || '') + '</div>';
+  }
+
+  /** One drawn HFJ signature applied to every selected agreement. */
+  function countersignForm(host, ids, after) {
+    var savedTitle = '';
+    try { savedTitle = localStorage.getItem('hfjCountersignTitle') || ''; } catch (e) {}
+    host.innerHTML = '<div class="card" style="margin-top:10px"><h3>Countersign ' + ids.length + ' document' + (ids.length > 1 ? 's' : '') + ' for HFJ</h3>' +
+      '<div class="row"><label>Your full name<input id="csName" value="' + esc(META.admin.name) + '"></label>' +
+      '<label>Title<input id="csTitle" value="' + esc(savedTitle) + '" placeholder="e.g. CEO"></label></div>' +
+      '<div id="csPad" style="margin-top:8px"></div>' +
+      '<div class="actions"><button id="csSign">Sign for HFJ</button><button class="secondary" id="csCancel">Cancel</button></div></div>';
+    var pad = mountSignPad(document.getElementById('csPad'));
+    document.getElementById('csCancel').onclick = function () { host.innerHTML = ''; };
+    document.getElementById('csSign').onclick = function (e) {
+      if (pad.isEmpty()) return fail(new Error('Draw your signature first.'));
+      var title = document.getElementById('csTitle').value;
+      try { localStorage.setItem('hfjCountersignTitle', title); } catch (err) {}
+      e.target.disabled = true;
+      call('api_countersign', ids, { typedName: document.getElementById('csName').value, title: title, image: pad.toDataURL() })
+        .then(function () { toast('Countersigned and filed'); after(); })
+        .catch(function (err) { e.target.disabled = false; fail(err); });
+    };
   }
 
   // ---------------------------------------------------------------- roster
@@ -188,18 +233,65 @@
       '</div><div class="actions">' +
       '<label class="check"><input type="checkbox" name="Telehealth"> Does telehealth</label>' +
       '<label class="check"><input type="checkbox" name="Precepting"> Precepts learners</label></div>' +
-      '<p class="muted small">Use <b>Active</b> when backfilling an existing volunteer, <b>Prospective</b> for someone new. ' +
-      'Emailing the volunteer their onboarding link arrives in Phase 2.</p>' +
+      '<div class="actions"><label class="check"><input type="checkbox" name="sendLink" checked> Email their onboarding link now</label></div>' +
+      '<p class="muted small">Use <b>Active</b> for a current volunteer, <b>Prospective</b> for someone new. ' +
+      'To add several people at once, use <a href="#/invite">Invite</a>.</p>' +
       '<div class="actions"><button type="submit">Create</button></div></form></div>';
     document.getElementById('newForm').onsubmit = function (e) {
       e.preventDefault();
       var btn = e.target.querySelector('button');
       btn.disabled = true;
-      call('api_createVolunteer', formData(e.target)).then(function (id) {
-        toast('Created ' + id);
+      var f = formData(e.target);
+      var send = f.sendLink; delete f.sendLink;
+      call('api_createVolunteer', f).then(function (id) {
+        return (send ? call('api_invite', id).then(function (to) { toast('Created ' + id + ' and emailed ' + to); })
+          : Promise.resolve(toast('Created ' + id))).catch(function (err) { fail(err); }).then(function () { return id; });
+      }).then(function (id) {
         location.hash = '#/v/' + encodeURIComponent(id);
       }).catch(function (err) { btn.disabled = false; fail(err); });
     };
+  }
+
+  // ---------------------------------------------------------------- invite
+
+  function renderInvite() {
+    app.innerHTML = '<h1>Invite volunteers</h1><div class="card"><form id="inviteForm">' +
+      '<p class="small">One person per line: <b>name, email, credential</b>. You can paste three columns straight from a spreadsheet. ' +
+      'Each person gets their personal link by email. Anyone already on the roster (matched by email) is invited rather than added twice.</p>' +
+      '<label>People<textarea name="text" rows="10" placeholder="Ann Lee, ann@example.com, MD&#10;Bo Ng, bo@example.com, NP"></textarea></label>' +
+      '<div class="row"><label>Add new people as<select name="status">' +
+      options([{ value: 'Active', label: 'Active (current volunteers, re-onboarding)' }, { value: 'Prospective', label: 'Prospective (new volunteers)' }], 'Active') +
+      '</select></label></div><div class="actions"><button type="submit">Send invitations</button></div></form><div id="inviteResult"></div></div>';
+    document.getElementById('inviteForm').onsubmit = function (e) {
+      e.preventDefault();
+      var f = formData(e.target), btn = e.target.querySelector('button');
+      if (!confirm('Email personal links to everyone listed?')) return;
+      btn.disabled = true;
+      call('api_bulkInvite', f.text, f.status).then(function (r) {
+        btn.disabled = false;
+        document.getElementById('inviteResult').innerHTML = '<h3>Done</h3><p>' + r.created + ' added, ' + r.invited + ' emailed.</p>' +
+          (r.skipped.length ? '<p class="small">Skipped:</p>' + reasonsList(r.skipped).replace('reasons', 'reasons muted') : '') +
+          (r.errors.length ? '<p class="small">Problems:</p>' + reasonsList(r.errors) : '');
+      }).catch(function (err) { btn.disabled = false; fail(err); });
+    };
+  }
+
+  // ---------------------------------------------------------------- documents
+
+  function renderDocuments() {
+    loading();
+    call('api_documents').then(function (docs) {
+      app.innerHTML = '<h1>Documents</h1><p class="small">The text of each document lives in the <b>Documents</b> tab of the ' +
+        '<a href="' + safeUrl(META.spreadsheetUrl) + '" target="_blank" rel="noopener">spreadsheet</a>. Edit it there; volunteers see the change straight away. ' +
+        'Change the <b>Version</b> whenever the wording changes. Every signature records the version signed, and the signed PDF keeps the exact text.</p>' +
+        '<div class="card"><ul class="list">' + docs.map(function (d) {
+          return '<li><b>' + esc(d.published ? d.title : d.key) + '</b> ' +
+            (d.published ? '<span class="chip ok">v' + esc(d.version) + '</span>' : '<span class="chip warn">not in the Documents tab</span>') +
+            ' <span class="muted small">' + esc(d.key) + ' · ' + (d.kind === 'ack' ? 'read & acknowledge' : 'signed') +
+            (d.effectiveDate ? ' · effective ' + esc(d.effectiveDate) : '') + ' · ' + d.signedCount + ' completed</span>' +
+            (d.published ? '<details><summary class="small">Preview</summary><div class="docpreview">' + d.html + '</div></details>' : '') + '</li>';
+        }).join('') + '</ul></div>';
+    }).catch(fail);
   }
 
   // ---------------------------------------------------------------- volunteer detail
@@ -214,10 +306,40 @@
         statusChip(v.Status) + ' ' + eligibleChip(d.eligibility.eligible) + '</p>' +
         (d.eligibility.eligible ? '' : '<div class="card">' + '<h2>Why not eligible</h2>' + reasonsList(d.eligibility.reasons) + '</div>');
 
-      html += credentialsCard(d) + requirementsCard(d) + attestationCard(d) + profileCard(v);
+      html += onboardingCard(d) + credentialsCard(d) + requirementsCard(d) + attestationCard(d) + profileCard(v);
       app.innerHTML = html;
       wireVolunteer(d);
     }).catch(fail);
+  }
+
+  function onboardingCard(d) {
+    var v = d.volunteer, l = d.link;
+    var linkLine = l.active ? 'Personal link sent ' + esc(String(l.issuedAt).slice(0, 10))
+      : l.revokedAt ? 'Link revoked ' + esc(String(l.revokedAt).slice(0, 10)) : 'No link sent yet';
+    var tasks = d.tasks.map(function (t) {
+      var cls = { done: 'ok', todo: 'warn', waiting: 'info', hfj: 'info', unavailable: '' }[t.status];
+      var label = { done: 'done', todo: 'to do', waiting: 'waiting', hfj: 'HFJ', unavailable: 'not available' }[t.status];
+      return '<li>' + esc(t.title) + ' <span class="chip ' + cls + '">' + label + '</span>' +
+        (t.note ? '<div class="small muted">' + esc(t.note) + '</div>' : '') + '</li>';
+    }).join('');
+    var sigs = d.signatures.map(function (s) {
+      var waiting = s.Status === 'Awaiting HFJ';
+      return '<li>' + esc(s.DocTitle) + ' <span class="muted small">v' + esc(s.DocVersion) + '</span> ' +
+        '<span class="chip ' + (s.Status === 'Complete' ? 'ok' : 'info') + '">' + esc(s.Kind === 'ack' ? 'acknowledged' : s.Status) + '</span>' +
+        (s.currentVersion && s.currentVersion !== s.DocVersion ? ' <span class="chip warn">current is v' + esc(s.currentVersion) + '</span>' : '') +
+        '<div class="small muted">' + esc(s.SignerName) + ', ' + esc(String(s.SignedAt).slice(0, 10)) +
+        (s.SupervisorName ? ' · supervisor ' + esc(s.SupervisorName) + (s.SupervisorSignedAt ? ' signed' : ' (' + esc(s.SupervisorEmail) + ', not yet signed)') : '') +
+        (s.CountersignedBy ? ' · countersigned by ' + esc(s.CountersignedBy) : '') +
+        (s.PdfUrl ? ' · ' + link(s.PdfUrl, 'PDF') : '') + '</div>' +
+        (waiting ? '<div class="actions"><button class="small-btn" data-cs1="' + esc(s.SignatureID) + '">Countersign</button></div>' : '') + '</li>';
+    }).join('');
+    return '<div class="card"><h2>Onboarding</h2><p class="small">' + linkLine +
+      (v.FolderUrl ? ' · ' + link(v.FolderUrl, 'Volunteer folder') : '') +
+      (v.DriveFolderUrl ? ' · ' + link(v.DriveFolderUrl, 'Previous folder') : '') + '</p>' +
+      '<div class="actions"><button id="sendLink"' + (META.portalReady && v.Email ? '' : ' disabled') + '>' + (l.active ? 'Resend link' : 'Send link') + '</button>' +
+      (l.active ? '<button class="danger" id="revokeLink">Revoke link</button>' : '') + '</div>' +
+      '<h3>Steps</h3><ul class="list">' + tasks + '</ul>' +
+      (sigs ? '<h3>Signed and acknowledged</h3><ul class="list">' + sigs + '</ul><div id="cs1Host"></div>' : '') + '</div>';
   }
 
   function credentialsCard(d) {
@@ -241,6 +363,8 @@
           (c.SourceDocUrl ? ' · ' + link(c.SourceDocUrl, 'capture') : '') : '') +
         (c.Notes ? '<br><span class="muted">' + esc(c.Notes) + '</span>' : '') +
         '</div>' + review +
+        '<div class="side-by-side"><div data-credup="' + esc(c.CredentialID) + '|UploadedDocUrl"></div>' +
+        '<div data-credup="' + esc(c.CredentialID) + '|SourceDocUrl"></div></div>' +
         '<div class="actions"><button class="secondary" data-editcred="' + esc(c.CredentialID) + '">Edit</button>' +
         '<button class="danger" data-delcred="' + esc(c.CredentialID) + '">Delete</button></div></li>';
     }).join('');
@@ -276,7 +400,7 @@
         (r.CompletedDate ? 'Completed ' + esc(r.CompletedDate) + (r.CompletedBy ? ' by ' + esc(r.CompletedBy) : '') + ' ' : '') +
         (r.Detail ? '· ' + esc(r.Detail) + ' ' : '') +
         (r.DocumentUrl ? '· ' + link(r.DocumentUrl, 'document') : '') +
-        (r.Notes ? '<br><span class="muted">' + esc(r.Notes) + '</span>' : '') + '</div>';
+        (r.Notes && r.Notes !== r.reason ? '<br><span class="muted">' + esc(r.Notes) + '</span>' : '') + '</div>';
       if (r.owner === 'system') {
         return '<li>' + head + info + '<div class="small muted">Calculated from ' +
           (r.RequirementKey === 'license' ? 'verified credentials' : 'the attestation date') + '.</div></li>';
@@ -289,7 +413,10 @@
       } else if (r.RequirementKey === 'school') {
         detail = '<label>School / program<input name="Detail" value="' + esc(r.Detail) + '"></label>';
       }
-      return '<li>' + head + info + '<details><summary class="small">Update</summary>' +
+      var canUpload = r.RequirementKey !== 'bg_determination' && r.RequirementKey !== 'supervisor';
+      return '<li>' + head + info +
+        (canUpload && r.Status !== 'Complete' ? '<div data-requp="' + esc(r.RequirementID) + '" style="margin-top:6px"></div>' : '') +
+        '<details><summary class="small">Update</summary>' +
         '<form class="req-edit" data-req="' + esc(r.RequirementID) + '">' +
         '<label>Status<select name="Status">' + options(META.requirementStatuses, r.Status) + '</select></label>' +
         '<label>Completed<input type="date" name="CompletedDate" value="' + esc(r.CompletedDate) + '"></label>' +
@@ -310,7 +437,7 @@
       (v.LastAttestationDate ? 'Last attested ' + esc(v.LastAttestationDate) + ' · next due ' + esc(d.attestationDue) : 'No attestation on record.') +
       '</p><form id="attestForm" class="actions"><input type="date" name="date" required>' +
       '<button type="submit" class="secondary">Record attestation</button></form>' +
-      '<p class="small muted">Volunteers attest themselves through their link from Phase 2. Until then, record the date of a paper or emailed attestation here. ' +
+      '<p class="small muted">Volunteers attest through their personal link. Use this only for a paper or emailed attestation. ' +
       'Recording it re-prompts verification of every credential.</p></div>';
   }
 
@@ -354,6 +481,34 @@
       };
     }
 
+    document.getElementById('sendLink').onclick = function (e) {
+      if (!confirm('Email ' + (d.volunteer.Email || 'this volunteer') + ' a new personal link? Any earlier link stops working.')) return;
+      e.target.disabled = true;
+      call('api_invite', id).then(function (to) { reload('Link emailed to ' + to); }).catch(function (err) { e.target.disabled = false; fail(err); });
+    };
+    var revoke = document.getElementById('revokeLink');
+    if (revoke) revoke.onclick = function () {
+      if (!confirm('Revoke this volunteer\'s link? It stops working immediately.')) return;
+      call('api_revokeLink', id).then(function () { reload('Link revoked'); }).catch(fail);
+    };
+    app.querySelectorAll('[data-cs1]').forEach(function (b) {
+      b.onclick = function () { countersignForm(document.getElementById('cs1Host'), [b.dataset.cs1], function () { renderVolunteer(id); }); };
+    });
+    app.querySelectorAll('[data-requp]').forEach(function (host) {
+      mountDropzone(host, 'Drop the signed document or proof here (PDF or image), or click to choose', function (file) {
+        var date = prompt('Date it was signed (YYYY-MM-DD). Leave blank for today.', '') || '';
+        readUpload(file).then(function (f) { toast('Uploading…'); return call('api_uploadRequirementDocument', host.dataset.requp, f, date.trim()); })
+          .then(function () { reload('Filed and marked complete'); }).catch(fail);
+      });
+    });
+    app.querySelectorAll('[data-credup]').forEach(function (host) {
+      var parts = host.dataset.credup.split('|');
+      mountDropzone(host, parts[1] === 'SourceDocUrl' ? 'Drop your board lookup capture' : 'Drop the volunteer\'s copy', function (file) {
+        readUpload(file).then(function (f) { toast('Uploading…'); return call('api_uploadCredentialDocument', parts[0], parts[1], f); })
+          .then(function () { reload('Filed'); }).catch(fail);
+      });
+    });
+
     document.getElementById('addCred').onclick = function () { showCredForm(null); };
     app.querySelectorAll('[data-editcred]').forEach(function (b) {
       b.onclick = function () {
@@ -396,6 +551,8 @@
     var h = location.hash.replace(/^#\/?/, '');
     if (h === 'roster') return renderRoster();
     if (h === 'new') return renderNew();
+    if (h === 'invite') return renderInvite();
+    if (h === 'documents') return renderDocuments();
     if (h.indexOf('v/') === 0) return renderVolunteer(decodeURIComponent(h.slice(2)));
     renderDashboard();
   }

@@ -9,8 +9,8 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 
 | Phase | Scope | State |
 |---|---|---|
-| 1 | Roster, credentials, requirement matrix, eligibility, reminders, admin dashboard, migration | **This build** |
-| 2 | Onboarding: invite → tokenized volunteer link → upload + e-signature → Drive | Next |
+| 1 | Roster, credentials, requirement matrix, eligibility, reminders, admin dashboard, migration | Done |
+| 2 | Onboarding: invite → personal link → upload + e-signature → Drive | **This build** |
 | 3 | Call calendar: month grid, claim/release, Google Calendar sync, gap alerts | Later |
 
 ## What Phase 1 does
@@ -43,6 +43,74 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 - A Prospective volunteer becomes **Active automatically** once everything is
   complete.
 - **AuditLog** records every change, verification, reminder and import.
+
+## What Phase 2 adds: onboarding
+
+- **Invites.** On **Invite**, paste *name, email, credential* lines; each
+  person gets a personal link by email. You can also send one from **Add
+  volunteer**, or **Send / Resend / Revoke** on a volunteer's page. A link is
+  a 64-character random token. Only its SHA-256 hash is stored, so the
+  spreadsheet alone can't open anyone's portal. A new link replaces the old
+  one, and links stop working for Departed volunteers.
+- **The volunteer portal**, behind the link, needs no login. Volunteers:
+  - confirm their details
+  - enter each license (number, state, expiry) and upload a copy
+  - read and acknowledge the PHI policy
+  - sign the documents that apply to them
+  - do their annual attestation
+
+  Every action is logged, and the server only ever touches the record the
+  token belongs to.
+- **Their own folder.** The first visit creates *HFJ Volunteers / Lee, Ann
+  (HFJV-00001)* in Drive. Signed PDFs, uploads and filed documents land
+  there with names like `2026-10-09 Lee, Ann – Volunteer Provider Agreement
+  v1.0.pdf`. The old per-volunteer folder stays linked as *Previous folder*.
+- **Signing.**
+  - The volunteer types their name, draws a signature, and agrees to sign
+    electronically.
+  - Agreements then wait for an **HFJ countersignature**. They appear on the
+    dashboard, and one drawn signature can countersign several at once.
+  - A BH trainee's **supervising clinician** signs first, through their own
+    one-time emailed link.
+  - Only when every signature is in is the PDF filed and the requirement
+    marked complete.
+  - The text signed is snapshotted, so editing the Documents tab later can't
+    change a signed agreement.
+- **Background check authorization.** Date of birth, address and other names
+  go only into the signed PDF, never into the spreadsheet. It's signed once.
+  The determination is still recorded by an admin, and reports can't be
+  uploaded.
+- **Existing paperwork.** Each requirement on a volunteer's page has a
+  drag-and-drop box. Drop last year's signed agreement there, give the date it
+  was signed, and it's filed and marked complete. The volunteer then sees it
+  as *On file with HFJ* and isn't asked to sign again. Credentials have the
+  same for the volunteer's copy and for your board capture.
+- **Admins are emailed immediately** when a license needs verifying, when a
+  document needs countersigning, and when a volunteer finishes their part.
+- **A Prospective volunteer becomes Active** automatically once everything is
+  complete.
+
+### The Documents tab
+
+The text volunteers read and sign lives in the **Documents** tab, not in this
+repository. The PHI policy describes how the EHR is stored, and this repo is
+public. There's one row per document:
+
+| Column | |
+|---|---|
+| DocKey | Fixed key the app knows: `phi_policy`, `confidentiality`, `background_auth`, `vpa`, `add_a_supervision`, `add_b_telehealth`, `add_c_education`, `bh_agreement`, `attestation` |
+| Title, Version, EffectiveDate | Shown to volunteers and stamped on every signature |
+| Body | The text. `# Title`, `## Heading`, `- bullet`, `1. numbered`, blank line = new paragraph, `{{Name}}` / `{{Date}}` / `{{SupervisingPhysician}}` etc. = filled-in blanks |
+| Notes | For you; not shown |
+
+**Change the Version whenever the wording changes.** A document missing
+from the tab shows volunteers *HFJ is finalizing this document* (that's how
+the Nurse/CNA agreement appears until it exists). The **Documents** page in
+the dashboard previews each one.
+
+To load the starting text: open the Documents tab, then **File → Import →
+Upload** the CSV I provided. Choose **Replace current sheet**, and untick
+**Convert text to numbers, dates, and formulas**.
 
 ## Setup (one time)
 
@@ -91,6 +159,7 @@ One-time setup:
 | GitHub → Settings → Secrets and variables → Actions | **Secret** `CLASPRC_JSON` = the copied login. **Variable** `SCRIPT_ID` = the script ID. **Variable** `DEPLOYMENT_ID` = the web app's deployment ID (below). |
 | The Sheet (as volunteers@) | Run **HFJ Volunteers → Install daily reminder trigger** and approve. |
 | Apps Script editor (as volunteers@) | **Deploy → New deployment → Web app**, *Execute as: Me*, *Anyone within hfjvc.org*. Copy the **Deployment ID** into the `DEPLOYMENT_ID` variable. The **URL** is the dashboard. |
+| GitHub → Actions → Deploy | The first run after Phase 2 creates the **volunteer portal** deployment and prints its ID. Add it as the variable `VOLUNTEER_DEPLOYMENT_ID` and re-run the job. |
 
 Notes:
 
@@ -102,7 +171,17 @@ Notes:
   fail with an authorization error.
 - If a deploy fails with `invalid_grant`, the stored login has expired or
   been revoked. Repeat the `clasp login` row and update the secret.
-- Each deploy creates an Apps Script version, and Google allows 200 per
+- There are **two web apps from one script.** The dashboard is open to
+  *anyone within hfjvc.org*. The volunteer portal is open to *anyone, even
+  anonymous*, because volunteers use personal email and have no HFJ login.
+  Access is set per version, so each deploy pushes twice: once per access
+  setting. Admin pages still refuse anyone who isn't a signed-in hfjvc.org
+  admin, whichever URL they use.
+- If the portal link asks volunteers to sign in to Google, the Workspace
+  admin console isn't letting Apps Script web apps be shared outside
+  hfjvc.org. That's under **Apps → Google Workspace → Drive and Docs →
+  Sharing settings**.
+- Each deploy creates two Apps Script versions, and Google allows 200 per
   project. To clear old ones, go to **Project History** in the editor.
 - To redeploy without a code change, go to GitHub → **Actions → Deploy →
   Run workflow**.
@@ -172,12 +251,13 @@ The script asks Google for only what it uses:
 | See, edit, create and delete **only this spreadsheet** (`spreadsheets.currentonly`) | The roster itself. It can't open any other spreadsheet, the EHR's included. |
 | Send email as you | Reminders |
 | Manage this project's triggers | The daily reminder job |
+| See, edit, create and delete **only the Drive files this app created** (`drive.file`) | Volunteer folders, uploads and signed PDFs. It can't see any other Drive content, including the HFJ EMR. |
 | Show menus in the Sheet | The *HFJ Volunteers* menu |
 | See your email address | The admin check |
 
-It has no Google Drive access. The Phase 2 upload feature will need to write
-to volunteers' Drive folders, and that will be a deliberate permission change
-when it comes.
+Because the app only sees files it created, it can't write into the old
+per-volunteer folders. New documents go into the app's own folder tree, and
+the old folder stays linked from each record.
 
 ## Settings
 
@@ -218,14 +298,17 @@ These are judgment calls. Each is easy to change.
   sign-in and the AuditLog columns follow the spec's description, so line
   them up with the EHR if it does things differently.
 
-## Phase 2 note
+## Open items
 
-The volunteer link has to work for people outside hfjvc.org. That means a
-deployment with *Who has access: Anyone* (or a second deployment). Admin
-checks still work there, because `requireAdmin_()` checks the signed-in
-account, not the deployment. The `AccessToken` / `TokenIssuedAt` /
-`TokenRevokedAt` columns are already in place and are never sent to the
-browser.
+- **Annual attestation wording** in the starting Documents text is a draft I
+  wrote. Review it, ideally with your lawyer.
+- **Background check form and the FCRA:** if HFJ uses a third-party
+  screening company, federal and California law generally require the
+  *disclosure* to be a standalone document. The current form combines the
+  disclosure, the authorization and a release. Worth raising with your lawyer
+  alongside the recheck interval.
+- **The Nurse/CNA agreement** doesn't exist yet. Add a `nurse_agreement` row
+  to `DOC_FORMS` and the Documents tab when it does.
 
 ## Development
 
@@ -233,7 +316,13 @@ browser.
 npm test        # Node 20+, no dependencies
 ```
 
-`test/logic.test.mjs` covers the pure modules: the matrix, eligibility,
-dashboard, reminders and migration parsing. `test/flow.test.mjs` runs setup →
-roster edits → migration → daily job against an in-memory stand-in for
-SpreadsheetApp (`test/fake-gas.mjs`).
+- `test/logic.test.mjs` and `test/phase2-logic.test.mjs` cover the pure
+  modules: the matrix, eligibility, dashboard, reminders, migration parsing,
+  document rendering, the onboarding checklist, upload checks and invite
+  parsing.
+- `test/flow.test.mjs` and `test/onboarding-flow.test.mjs` run whole flows
+  against an in-memory stand-in for SpreadsheetApp, Drive, mail and
+  hashing (`test/fake-gas.mjs`):
+  - setup → roster → migration → daily job
+  - invite → portal → upload → sign → countersign, plus a supervisor's
+    signature, link revocation and admin uploads

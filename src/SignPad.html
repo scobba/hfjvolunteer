@@ -1,0 +1,109 @@
+<style>
+  .sigpad-wrap { border: 1px dashed #98a2b3; border-radius: 6px; background: #fff; position: relative; touch-action: none; }
+  .sigpad-wrap canvas { display: block; width: 100%; height: 150px; cursor: crosshair; }
+  .sigpad-wrap .hint { position: absolute; left: 12px; bottom: 8px; color: #98a2b3; font-size: 12px; pointer-events: none; }
+  .dropzone { border: 2px dashed #c9ced6; border-radius: 8px; padding: 14px; text-align: center; color: #667085;
+    font-size: 13px; cursor: pointer; background: #fafbfc; }
+  .dropzone.over { border-color: #1f5f8b; background: #e8f1f8; color: #1f5f8b; }
+  .dropzone input { display: none; }
+</style>
+<script>
+/** Signature pad (pointer events: mouse, touch, pen) and file helpers shared by every page. */
+(function () {
+  'use strict';
+
+  window.SignPad = function (canvas) {
+    var ctx = canvas.getContext('2d');
+    var drawing = false, empty = true, last = null;
+
+    function resize() {
+      var r = canvas.getBoundingClientRect();
+      var ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(r.width * ratio));
+      canvas.height = Math.max(1, Math.round(r.height * ratio));
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#111';
+      empty = true;
+    }
+    function pos(e) {
+      var r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+    canvas.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); canvas.setPointerCapture(e.pointerId);
+      drawing = true; last = pos(e);
+      ctx.beginPath(); ctx.arc(last.x, last.y, 1, 0, Math.PI * 2); ctx.fillStyle = '#111'; ctx.fill();
+      empty = false;
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!drawing) return;
+      var p = pos(e);
+      ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+      last = p;
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) {
+      canvas.addEventListener(t, function () { drawing = false; });
+    });
+    resize();
+
+    return {
+      clear: resize,
+      isEmpty: function () { return empty; },
+      /** Small PNG (max 600×180) so it fits in one spreadsheet cell. */
+      toDataURL: function () {
+        var scale = Math.min(1, 600 / canvas.width, 180 / canvas.height);
+        var out = document.createElement('canvas');
+        out.width = Math.round(canvas.width * scale); out.height = Math.round(canvas.height * scale);
+        out.getContext('2d').drawImage(canvas, 0, 0, out.width, out.height);
+        return out.toDataURL('image/png');
+      }
+    };
+  };
+
+  /** Mounts a pad into `host`; returns the pad. */
+  window.mountSignPad = function (host) {
+    host.innerHTML = '<div class="sigpad-wrap"><canvas></canvas><span class="hint">Sign here</span></div>' +
+      '<div class="actions" style="margin-top:6px"><button type="button" class="secondary small-btn">Clear</button></div>';
+    var pad = SignPad(host.querySelector('canvas'));
+    var hint = host.querySelector('.hint');
+    host.querySelector('canvas').addEventListener('pointerdown', function () { hint.style.display = 'none'; });
+    host.querySelector('button').onclick = function () { pad.clear(); hint.style.display = ''; };
+    return pad;
+  };
+
+  var MAX_BYTES = 5 * 1024 * 1024;
+
+  /** Reads a File into { name, mime, base64 } for google.script.run. */
+  window.readUpload = function (file) {
+    return new Promise(function (resolve, reject) {
+      if (!file) return reject(new Error('Choose a file.'));
+      if (file.size > MAX_BYTES) return reject(new Error('The file is larger than 5 MB. Please send a smaller copy.'));
+      if (!/\.(pdf|png|jpe?g|webp|heic|heif)$/i.test(file.name)) return reject(new Error('Only PDF or image files can be uploaded.'));
+      var r = new FileReader();
+      r.onload = function () { resolve({ name: file.name, mime: file.type, base64: String(r.result).split(',')[1] || '' }); };
+      r.onerror = function () { reject(new Error('Could not read the file.')); };
+      r.readAsDataURL(file);
+    });
+  };
+
+  /** Turns `host` into a drag-and-drop / click-to-choose zone. onFile(File) is called once per drop. */
+  window.mountDropzone = function (host, label, onFile) {
+    host.innerHTML = '<label class="dropzone"><input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif,application/pdf,image/*">' +
+      '<span></span></label>';
+    var zone = host.querySelector('.dropzone');
+    zone.querySelector('span').textContent = label;
+    var input = zone.querySelector('input');
+    input.onchange = function () { if (input.files[0]) onFile(input.files[0]); input.value = ''; };
+    ['dragenter', 'dragover'].forEach(function (t) {
+      zone.addEventListener(t, function (e) { e.preventDefault(); zone.classList.add('over'); });
+    });
+    ['dragleave', 'drop'].forEach(function (t) {
+      zone.addEventListener(t, function (e) { e.preventDefault(); zone.classList.remove('over'); });
+    });
+    zone.addEventListener('drop', function (e) {
+      var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (f) onFile(f);
+    });
+  };
+})();
+</script>

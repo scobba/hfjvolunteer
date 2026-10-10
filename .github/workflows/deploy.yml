@@ -1,7 +1,12 @@
 # Merging to main deploys: tests, then `clasp push` to the bound Apps Script
-# project, then the existing web app deployment moves to the new version
-# (same URL). Credentials belong to the dedicated deploy account, which can
-# edit only this project. Setup: README → "Automatic deploys".
+# project, then both web app deployments move to the new version (same URLs):
+#   DEPLOYMENT_ID            admin dashboard, "Anyone within hfjvc.org"
+#   VOLUNTEER_DEPLOYMENT_ID  volunteer portal, "Anyone, even anonymous", so
+#                            volunteers with personal email can open their link
+# Access is part of the manifest of each version, so the job pushes twice:
+# once with domain-only access for the admin deployment, once with anonymous
+# access for the portal. Credentials belong to the dedicated deploy account,
+# which can edit only this project. Setup: README → "Automatic deploys".
 name: Deploy
 
 on:
@@ -22,8 +27,8 @@ jobs:
     # Skips cleanly until the repository variable SCRIPT_ID is set.
     if: ${{ vars.SCRIPT_ID != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm test
@@ -42,18 +47,38 @@ jobs:
           printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
           printf '{"scriptId":"%s","rootDir":"src"}' "$SCRIPT_ID" > .clasp.json
 
-      - name: Push code
-        run: clasp push --force
+      - name: Write deployment URLs into the app
+        env:
+          ADMIN_ID: ${{ vars.DEPLOYMENT_ID }}
+          VOLUNTEER_ID: ${{ vars.VOLUNTEER_DEPLOYMENT_ID }}
+        run: node scripts/write-generated.mjs
 
-      - name: Move the web app to the new version
+      - name: Push and update the admin dashboard
         env:
           DEPLOYMENT_ID: ${{ vars.DEPLOYMENT_ID }}
         run: |
+          clasp push --force
           if [ -z "$DEPLOYMENT_ID" ]; then
-            echo "::notice::Code pushed. DEPLOYMENT_ID isn't set yet, so the web app wasn't updated."
+            echo "::notice::Code pushed. DEPLOYMENT_ID isn't set yet, so the dashboard wasn't updated."
             exit 0
           fi
-          clasp redeploy "$DEPLOYMENT_ID" --description "${GITHUB_SHA::7} $(git log -1 --format=%s | cut -c1-80)"
+          clasp redeploy "$DEPLOYMENT_ID" --description "${GITHUB_SHA::7} admin $(git log -1 --format=%s | cut -c1-70)"
+
+      - name: Push and update the volunteer portal
+        env:
+          VOLUNTEER_DEPLOYMENT_ID: ${{ vars.VOLUNTEER_DEPLOYMENT_ID }}
+        run: |
+          node scripts/portal-manifest.mjs
+          clasp push --force
+          desc="${GITHUB_SHA::7} portal $(git log -1 --format=%s | cut -c1-70)"
+          if [ -n "$VOLUNTEER_DEPLOYMENT_ID" ]; then
+            clasp redeploy "$VOLUNTEER_DEPLOYMENT_ID" --description "$desc"
+          else
+            out=$(clasp create-deployment --description "$desc")
+            echo "$out"
+            id=$(echo "$out" | grep -o 'AKfy[A-Za-z0-9_-]*' | head -1)
+            echo "::notice::Created the volunteer portal deployment. Add the repository variable VOLUNTEER_DEPLOYMENT_ID = $id, then re-run this job."
+          fi
 
       - name: Remove credentials
         if: always()

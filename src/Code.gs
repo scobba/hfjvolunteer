@@ -1,6 +1,22 @@
-/** Web app entry point and the spreadsheet menu. */
+/**
+ * Web app entry point and the spreadsheet menu.
+ *
+ * ?t=<token>  volunteer portal (personal link)
+ * ?s=<token>  supervising clinician's signing page
+ * otherwise   admin dashboard (hfjvc.org admins only)
+ */
 
-function doGet() {
+function doGet(e) {
+  var p = (e && e.parameter) || {};
+  if (p.t || p.s) {
+    var page = HtmlService.createTemplateFromFile('Portal');
+    page.mode = p.s ? 'supervisor' : 'volunteer';
+    page.token = isTokenShaped(p.s || p.t) ? String(p.s || p.t) : '';
+    return page.evaluate()
+      .setTitle('HFJ Volunteers')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+  }
   var email = currentEmail_();
   var error = '';
   try {

@@ -16,6 +16,13 @@ function groupBy(rows, field) {
 function buildDashboard(data, today, opts) {
   var credsBy = groupBy(data.credentials, 'VolunteerID');
   var reqsBy = groupBy(data.requirements, 'VolunteerID');
+  var names = {};
+  data.volunteers.forEach(function (v) { names[v.VolunteerID] = v.Name; });
+  var awaitingHfj = (data.signatures || []).filter(function (s) { return s.Status === 'Awaiting HFJ'; })
+    .map(function (s) {
+      return { signatureId: s.SignatureID, volunteerId: s.VolunteerID, name: names[s.VolunteerID] || s.VolunteerID,
+        title: s.DocTitle, version: s.DocVersion, signedAt: String(s.SignedAt).slice(0, 10) };
+    });
   var lead = opts.reminderLeadDays || 60;
   var current = data.volunteers.filter(function (v) { return CURRENT_STATUSES.indexOf(v.Status) !== -1; });
 
@@ -68,6 +75,7 @@ function buildDashboard(data, today, opts) {
   return {
     today: today,
     needsReview: needsReview,
+    awaitingHfj: awaitingHfj,
     expiring: expiring,
     ineligible: ineligible,
     onboarding: onboarding,

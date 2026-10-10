@@ -11,6 +11,8 @@
       <a href="#/">Dashboard</a>
       <a href="#/roster">Roster</a>
       <a href="#/new">Add volunteer</a>
+      <a href="#/invite">Invite</a>
+      <a href="#/documents">Documents</a>
       <a id="sheetLink" href="#" target="_blank" rel="noopener">Spreadsheet</a>
     </nav>
   </header>
@@ -27,6 +29,7 @@
   </main>
   <div id="toast" class="toast" hidden></div>
   <? if (!error) { ?>
+    <?!= include('SignPad'); ?>
     <?!= include('App'); ?>
   <? } ?>
 </body>

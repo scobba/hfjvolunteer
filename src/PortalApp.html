@@ -1,0 +1,214 @@
+<script>
+(function () {
+  'use strict';
+
+  var app = document.getElementById('app');
+  var state = null;
+  var openKey = null;
+
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      r[fn].apply(r, args);
+    });
+  }
+  function esc(s) {
+    return String(s === undefined || s === null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function toast(msg, isError) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast' + (isError ? ' error' : ''); t.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.hidden = true; }, isError ? 8000 : 3000);
+  }
+  function fail(err) { toast((err && err.message) || String(err), true); }
+  function busy(btn, on) { if (btn) { btn.disabled = on; if (on) btn.dataset.label = btn.textContent, btn.textContent = 'Saving…'; else if (btn.dataset.label) btn.textContent = btn.dataset.label; } }
+
+  var CONSENT = 'I agree to sign this document electronically, and that my electronic signature has the same effect as my handwritten signature.';
+
+  // ---------------------------------------------------------------- volunteer
+
+  function load() {
+    call('portal_bootstrap', PORTAL_TOKEN).then(function (s) { state = s; render(); }).catch(function (err) {
+      app.innerHTML = '<div class="card error-card"><h2>This link isn\'t working</h2><p>' + esc(err.message || err) + '</p></div>';
+    });
+  }
+
+  function render() {
+    var v = state.volunteer;
+    var tasks = state.tasks;
+    var mine = tasks.filter(function (t) { return t.status !== 'hfj'; });
+    var done = mine.filter(function (t) { return t.status === 'done' || t.status === 'waiting'; }).length;
+    var html = '<h1>Hi ' + esc(v.PreferredName || v.Name.split(' ')[0]) + '</h1>' +
+      '<p class="muted">Your HFJ volunteer onboarding' + (v.Status === 'Active' ? ' and annual update' : '') +
+      '. Your progress saves as you go; you can come back to this link at any time.</p>' +
+      '<div class="progress"><div style="width:' + Math.round(100 * done / Math.max(1, mine.length)) + '%"></div></div>';
+    if (state.done) {
+      html += '<div class="card" style="border-color:var(--ok)"><h2>You\'re all set for now</h2><p>Thank you! Everything you can do is done. ' +
+        'HFJ will finish the remaining steps and contact you if anything else is needed.</p></div>';
+    }
+    html += '<div class="card"><h2>Your steps</h2><div>' + tasks.map(taskRow).join('') + '</div></div>';
+    app.innerHTML = html;
+    tasks.forEach(function (t) {
+      var b = app.querySelector('[data-open="' + t.key + '"]');
+      if (b) b.onclick = function () { openKey = openKey === t.key ? null : t.key; render(); };
+    });
+    if (openKey) wirePanel(tasks.filter(function (t) { return t.key === openKey; })[0]);
+  }
+
+  function taskRow(t) {
+    var icon = { done: '✓', waiting: '…', hfj: 'H', unavailable: '–' }[t.status] || '•';
+    var label = { todo: 'To do', done: 'Done', waiting: 'Waiting', hfj: 'HFJ', unavailable: 'Not yet available' }[t.status];
+    var actionable = t.status === 'todo' || (t.type === 'profile') || (t.type === 'credential' && t.status !== 'unavailable');
+    return '<div class="task ' + t.status + '"><div class="dot">' + icon + '</div><div class="body">' +
+      '<div class="title">' + esc(t.title) + ' <span class="chip ' + (t.status === 'done' ? 'ok' : t.status === 'todo' ? 'warn' : 'info') + '">' + label + '</span></div>' +
+      (t.note ? '<div class="small muted">' + esc(t.note) + '</div>' : '') +
+      (actionable ? '<div class="actions" style="margin-top:6px"><button class="' + (t.status === 'todo' ? '' : 'secondary ') + 'small-btn" data-open="' + esc(t.key) + '">' +
+        (openKey === t.key ? 'Close' : t.status === 'todo' ? 'Start' : 'Update') + '</button></div>' : '') +
+      (openKey === t.key ? '<div id="panel" style="margin-top:10px"></div>' : '') +
+      '</div></div>';
+  }
+
+  function wirePanel(t) {
+    var panel = document.getElementById('panel');
+    if (!panel || !t) return;
+    if (t.type === 'profile') return profilePanel(panel);
+    if (t.type === 'credential') return credentialPanel(panel, t);
+    var form = state.forms[t.docKey];
+    if (!form) { panel.innerHTML = '<p class="muted">This document isn\'t available yet.</p>'; return; }
+    if (form.kind === 'ack') return ackPanel(panel, t, form);
+    return signPanel(panel, t, form);
+  }
+
+  function profilePanel(panel) {
+    var v = state.volunteer;
+    panel.innerHTML = '<form id="pf"><div class="row">' +
+      '<label>Preferred name<input name="PreferredName" value="' + esc(v.PreferredName) + '"></label>' +
+      '<label>Phone<input name="Phone" type="tel" required value="' + esc(v.Phone) + '"></label>' +
+      '<label>Spanish ability (in your own words)<input name="SpanishFluency" value="' + esc(v.SpanishFluency) + '" placeholder="e.g. conversational, medical Spanish, none"></label>' +
+      '<label>24-hour call days you\'d like per month<input name="CallTargetPerMonth" type="number" min="0" step="1" value="' + esc(v.CallTargetPerMonth) + '"></label>' +
+      '</div><div class="actions"><label class="check"><input type="checkbox" name="OnSignal"' + (v.OnSignal ? ' checked' : '') + '> I\'m on Signal</label></div>' +
+      '<p class="small muted">Email on file: ' + esc(v.Email) + '. To change it, reply to your invitation email.</p>' +
+      '<div class="actions"><button type="submit">Save details</button></div></form>';
+    panel.querySelector('form').onsubmit = function (e) {
+      e.preventDefault();
+      var f = e.target, btn = f.querySelector('button[type=submit]');
+      busy(btn, true);
+      call('portal_saveProfile', PORTAL_TOKEN, {
+        PreferredName: f.PreferredName.value, Phone: f.Phone.value, SpanishFluency: f.SpanishFluency.value,
+        CallTargetPerMonth: f.CallTargetPerMonth.value, OnSignal: f.OnSignal.checked
+      }).then(done('Details saved')).catch(function (err) { busy(btn, false); fail(err); });
+    };
+  }
+
+  function credentialPanel(panel, t) {
+    var existing = state.credentials.filter(function (c) { return t.credentialTypes.indexOf(c.Type) !== -1; })
+      .sort(function (a, b) { return String(b.ExpirationDate).localeCompare(String(a.ExpirationDate)); })[0] || {};
+    var types = t.credentialTypes.map(function (x) { return '<option' + (x === existing.Type ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
+    panel.innerHTML = '<form id="cf"><div class="row">' +
+      '<label>Type<select name="Type">' + types + '</select></label>' +
+      '<label>License / certificate number<input name="LicenseNumber" required value="' + esc(existing.LicenseNumber) + '"></label>' +
+      '<label>Issuing state<input name="IssuingState" maxlength="2" value="' + esc(existing.IssuingState || 'CA') + '"></label>' +
+      '<label>Expiration date<input name="ExpirationDate" type="date" required value="' + esc(existing.ExpirationDate) + '"></label>' +
+      '</div><p class="small">Attach a copy: a screenshot or PDF of your entry on the licensing board\'s website. ' +
+      'HFJ will also look you up on the board\'s site directly.</p><div id="cdrop"></div><p class="small" id="cfile">' +
+      (existing.uploaded ? 'A copy is already on file. Attach a new one only if this is a renewal.' : '') + '</p>' +
+      '<div class="actions"><button type="submit">Save license</button></div></form>';
+    var chosen = null;
+    mountDropzone(document.getElementById('cdrop'), 'Drop a PDF or image here, or tap to choose', function (file) {
+      chosen = file; document.getElementById('cfile').textContent = 'Attached: ' + file.name;
+    });
+    panel.querySelector('form').onsubmit = function (e) {
+      e.preventDefault();
+      var f = e.target, btn = f.querySelector('button[type=submit]');
+      busy(btn, true);
+      (chosen ? readUpload(chosen) : Promise.resolve(null)).then(function (file) {
+        return call('portal_saveCredential', PORTAL_TOKEN, {
+          Type: f.Type.value, LicenseNumber: f.LicenseNumber.value, IssuingState: f.IssuingState.value,
+          ExpirationDate: f.ExpirationDate.value
+        }, file);
+      }).then(done('Saved. HFJ will verify it with the board.')).catch(function (err) { busy(btn, false); fail(err); });
+    };
+  }
+
+  function ackPanel(panel, t, form) {
+    panel.innerHTML = docHeader(form) + '<div class="docbox">' + form.html + '</div>' +
+      '<label class="check"><input type="checkbox" id="ackbox"> ' + esc(form.ackLabel) + '</label>' +
+      '<div class="actions"><button id="ackbtn" disabled>Confirm</button></div>';
+    var box = document.getElementById('ackbox'), btn = document.getElementById('ackbtn');
+    box.onchange = function () { btn.disabled = !box.checked; };
+    btn.onclick = function () {
+      busy(btn, true);
+      call('portal_acknowledge', PORTAL_TOKEN, t.docKey).then(done('Recorded')).catch(function (err) { busy(btn, false); fail(err); });
+    };
+  }
+
+  function signPanel(panel, t, form) {
+    var fields = form.fields.map(function (f) {
+      var input = f.type === 'textarea'
+        ? '<textarea name="' + esc(f.key) + '"' + (f.required ? ' required' : '') + '>' + esc(f.value) + '</textarea>'
+        : '<input name="' + esc(f.key) + '" type="' + esc(f.type) + '"' + (f.required ? ' required' : '') + ' value="' + esc(f.value) + '">';
+      return '<label>' + esc(f.label) + (f.required ? '' : ' (optional)') + input + '</label>';
+    }).join('');
+    panel.innerHTML = docHeader(form) + '<div class="docbox">' + form.html + '</div>' +
+      '<form id="sf">' + (fields ? '<h3>Fill in</h3><div class="row">' + fields + '</div>' : '') +
+      (form.sensitive ? '<p class="small muted">These details go only into your signed form, which only HFJ\'s administrators can see. They are not saved anywhere else.</p>' : '') +
+      '<h3>Sign</h3><label>Type your full name<input name="typedName" required autocomplete="name" value="' + esc(state.volunteer.Name) + '"></label>' +
+      '<div id="pad" style="margin-top:8px"></div>' +
+      '<label class="check" style="margin-top:8px"><input type="checkbox" name="consent"> ' + esc(CONSENT) + '</label>' +
+      '<div class="actions"><button type="submit">Sign</button></div></form>';
+    var pad = mountSignPad(document.getElementById('pad'));
+    panel.querySelector('form').onsubmit = function (e) {
+      e.preventDefault();
+      var f = e.target, btn = f.querySelector('button[type=submit]');
+      if (pad.isEmpty()) return fail(new Error('Please draw your signature in the box.'));
+      if (!f.consent.checked) return fail(new Error('Please tick the box to agree to sign electronically.'));
+      var values = {};
+      form.fields.forEach(function (fl) { values[fl.key] = f[fl.key].value; });
+      busy(btn, true);
+      call('portal_sign', PORTAL_TOKEN, t.docKey, {
+        fields: values, typedName: f.typedName.value, image: pad.toDataURL(), consent: true
+      }).then(done('Signed')).catch(function (err) { busy(btn, false); fail(err); });
+    };
+  }
+
+  function docHeader(form) {
+    return '<div class="small muted">Version ' + esc(form.version) + (form.effectiveDate ? ', effective ' + esc(form.effectiveDate) : '') + '</div>';
+  }
+
+  function done(msg) {
+    return function (s) { state = s; openKey = null; render(); toast(msg); window.scrollTo(0, 0); };
+  }
+
+  // ---------------------------------------------------------------- supervisor
+
+  function loadSupervisor() {
+    call('supervisor_bootstrap', PORTAL_TOKEN).then(function (d) {
+      app.innerHTML = '<h1>Supervisor signature</h1><p>' + esc(d.traineeName) + ' signed the <b>' + esc(d.title) +
+        '</b> (version ' + esc(d.version) + ') on ' + esc(d.traineeSignedAt) + ' and named you as their supervising licensed clinician. ' +
+        'Please review it and sign below.</p><div class="card"><div class="docbox">' + d.html + '</div>' +
+        '<form id="sv"><label>Your full name<input name="typedName" required value="' + esc(d.supervisorName) + '"></label>' +
+        '<div id="pad" style="margin-top:8px"></div>' +
+        '<label class="check" style="margin-top:8px"><input type="checkbox" name="consent"> ' + esc(CONSENT) + '</label>' +
+        '<div class="actions"><button type="submit">Sign as supervisor</button></div></form></div>';
+      var pad = mountSignPad(document.getElementById('pad'));
+      document.getElementById('sv').onsubmit = function (e) {
+        e.preventDefault();
+        var f = e.target, btn = f.querySelector('button[type=submit]');
+        if (pad.isEmpty()) return fail(new Error('Please draw your signature in the box.'));
+        if (!f.consent.checked) return fail(new Error('Please tick the box to agree to sign electronically.'));
+        busy(btn, true);
+        call('supervisor_sign', PORTAL_TOKEN, { typedName: f.typedName.value, image: pad.toDataURL(), consent: true })
+          .then(function () {
+            app.innerHTML = '<div class="card" style="border-color:var(--ok)"><h2>Thank you</h2><p>Your signature has been recorded. HFJ will countersign and keep the agreement on file.</p></div>';
+          }).catch(function (err) { busy(btn, false); fail(err); });
+      };
+    }).catch(function (err) {
+      app.innerHTML = '<div class="card error-card"><h2>This link isn\'t working</h2><p>' + esc(err.message || err) + '</p></div>';
+    });
+  }
+
+  if (PORTAL_MODE === 'supervisor') loadSupervisor(); else load();
+})();
+</script>
