@@ -177,3 +177,23 @@ test('without a deployed portal, invites fail before anyone is created', () => {
   assert.throws(() => app.api_bulkInvite('Ann Lee, ann@example.com, MD', 'Active'), /isn't deployed/);
   assert.equal(app.readRows_('Volunteers').length, 0);
 });
+
+test('nothing is ever shared publicly, and the portal never hands out Drive links', () => {
+  const { app, gas } = setup();
+  app.updateRow_('Admins', 2, { Name: 'Anthony Walls' });
+  app.appendRow_('Admins', { Email: 'someone@gmail.com', Name: 'Outsider', Active: true });
+  app.api_bulkInvite('Ann Lee, ann@example.com, MD', 'Active');
+  const token = tokenFrom(gas.sent[0], 't');
+  let state = app.portal_bootstrap(token);
+  state = app.portal_saveCredential(token, { Type: 'CA Physician & Surgeon License', LicenseNumber: 'A1', ExpirationDate: '2027-06-30' }, pdfFile);
+  app.portal_acknowledge(token, 'phi_policy');
+  state = app.portal_sign(token, 'confidentiality', Object.assign({ fields: { Role: 'MD' } }, sig));
+  assert.doesNotMatch(JSON.stringify(state), /drive\.google\.com|file\d+/, 'portal state carries no Drive links or file ids');
+  assert.ok(gas.permissions.length >= 1);
+  for (const p of gas.permissions) {
+    assert.equal(p.type, 'user');
+    assert.match(p.emailAddress, /@hfjvc\.org$/);
+  }
+  assert.ok(!gas.permissions.some((p) => p.emailAddress === 'someone@gmail.com'), 'off-domain "admin" refused');
+  assert.ok(app.readRows_('AuditLog').some((r) => r.Action === 'drive.share.error'));
+});

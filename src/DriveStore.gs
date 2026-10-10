@@ -23,13 +23,35 @@ function rootFolderId_() {
   return f.id;
 }
 
+/**
+ * The only sharing this app may ever do: one named person, on the admin
+ * domain, on the Admins list. Never "anyone with the link", never a whole
+ * domain or group. Pure, so it is tested directly. Throws on anything else.
+ */
+function assertAllowedShare(permission, adminEmails, adminDomain) {
+  var keys = Object.keys(permission).sort().join(',');
+  var email = String(permission.emailAddress || '').toLowerCase();
+  var domain = String(adminDomain || '').toLowerCase();
+  var admins = adminEmails.map(function (e) { return String(e).toLowerCase(); });
+  if (keys !== 'emailAddress,role,type' || permission.type !== 'user' ||
+      (permission.role !== 'writer' && permission.role !== 'reader') ||
+      !domain || email.slice(-(domain.length + 1)) !== '@' + domain || admins.indexOf(email) === -1) {
+    throw new Error('Refusing to share: only named @' + domain + ' admins may be given access.');
+  }
+  return true;
+}
+
 /** Gives every active admin edit access to the volunteer folders. Safe to repeat. */
 function shareWithAdmins_(folderId) {
   var me = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
-  adminEmails_().forEach(function (email) {
+  var admins = adminEmails_();
+  var domain = getSettings_().AdminDomain;
+  admins.forEach(function (email) {
     if (String(email).toLowerCase() === me) return;
+    var permission = { role: 'writer', type: 'user', emailAddress: email };
     try {
-      Drive.Permissions.create({ role: 'writer', type: 'user', emailAddress: email }, folderId, { sendNotificationEmail: false });
+      assertAllowedShare(permission, admins, domain);
+      Drive.Permissions.create(permission, folderId, { sendNotificationEmail: false });
     } catch (e) {
       logAudit_('system', 'drive.share.error', 'Folder', folderId, email + ': ' + e.message);
     }

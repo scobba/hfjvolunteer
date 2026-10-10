@@ -259,6 +259,14 @@ The script asks Google for only what it uses:
 | Show menus in the Sheet | The *HFJ Volunteers* menu |
 | See your email address | The admin check |
 
+**Nothing is ever shared publicly.** All Drive sharing goes through one
+guarded function (`assertAllowedShare` in `src/DriveStore.gs`). It allows
+only "this named person can edit" for an active admin on the admin domain,
+and never "anyone with the link", a whole domain or a group. Tests fail if
+any other sharing call appears in the code. The volunteer portal never
+returns Drive links. So the public part is the portal page itself, and it
+shows nothing without a valid personal link.
+
 Because the app only sees files it created, it can't write into the old
 per-volunteer folders. New documents go into the app's own folder tree, and
 the old folder stays linked from each record.
