@@ -69,8 +69,8 @@ function buildSignedDocumentHtml(doc, values, sigs, recordLine) {
   }).join('');
   return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
     'body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;line-height:1.45;color:#111;margin:36px}' +
-    'h1{font-size:16pt;margin:0 0 4px}h2{font-size:12pt;margin:16px 0 4px}' +
-    '.org{color:#555;font-size:10pt;margin-bottom:14px}.version{color:#555;font-size:9pt}' +
+    'h1{font-size:16pt;margin:0 0 4px;color:#333367}h2{font-size:12pt;margin:16px 0 4px;color:#333367}' +
+    '.org{color:#4f6f5c;font-size:10pt;margin-bottom:14px;padding-bottom:6px;border-bottom:2px solid #809e8b}.version{color:#555;font-size:9pt}' +
     '.filled{font-weight:bold;border-bottom:1px solid #999}.blank{display:inline-block;min-width:160px;border-bottom:1px solid #999}' +
     '.sigs{margin-top:28px;page-break-inside:avoid}.sigblock{margin:18px 0}.role{font-weight:bold}' +
     '.sig{height:60px;display:block;margin-top:4px}.line{border-top:1px solid #333;width:280px;margin:2px 0 4px}' +

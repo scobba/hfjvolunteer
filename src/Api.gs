@@ -27,7 +27,8 @@ function api_dashboard() {
   data.signatures = readRows_(TABS.SIGNATURES);
   var d = buildDashboard(data, today_(), { reminderLeadDays: p.reminderLeadDays, bgIntervalMonths: p.bgIntervalMonths });
   var docs = getDocuments_();
-  d.missingDocuments = DOC_ORDER.filter(function (k) { return !docs[k]; });
+  d.missingDocuments = DOC_ORDER.filter(function (k) { return !docs[k]; })
+    .map(function (k) { return DOC_DEFAULT_TITLES[k] + ' (' + k + ')'; });
   return d;
 }
 

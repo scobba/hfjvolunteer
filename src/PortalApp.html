@@ -40,12 +40,13 @@
     var tasks = state.tasks;
     var mine = tasks.filter(function (t) { return t.status !== 'hfj'; });
     var done = mine.filter(function (t) { return t.status === 'done' || t.status === 'waiting'; }).length;
-    var html = '<h1>Hi ' + esc(v.PreferredName || v.Name.split(' ')[0]) + '</h1>' +
-      '<p class="muted">Your HFJ volunteer onboarding' + (v.Status === 'Active' ? ' and annual update' : '') +
+    var html = '<div class="hello"><h1>Hi ' + esc(v.PreferredName || v.Name.split(' ')[0]) + '</h1>' +
+      '<p>Your HFJ volunteer onboarding' + (v.Status === 'Active' ? ' and annual update' : '') +
       '. Your progress saves as you go; you can come back to this link at any time.</p>' +
-      '<div class="progress"><div style="width:' + Math.round(100 * done / Math.max(1, mine.length)) + '%"></div></div>';
+      '<div class="progress"><div style="width:' + Math.round(100 * done / Math.max(1, mine.length)) + '%"></div></div>' +
+      '<p class="small" style="margin-top:6px">' + done + ' of ' + mine.length + ' steps done</p></div>';
     if (state.done) {
-      html += '<div class="card" style="border-color:var(--ok)"><h2>You\'re all set for now</h2><p>Thank you! Everything you can do is done. ' +
+      html += '<div class="card" style="border-color:var(--sage);border-left:4px solid var(--sage)"><h2>You\'re all set for now</h2><p>Thank you! Everything you can do is done. ' +
         'HFJ will finish the remaining steps and contact you if anything else is needed.</p></div>';
     }
     html += '<div class="card"><h2>Your steps</h2><div>' + tasks.map(taskRow).join('') + '</div></div>';

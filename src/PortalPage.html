@@ -19,12 +19,19 @@
     .docbox h1 { font-size: 18px; } .docbox h2 { font-size: 15px; margin-top: 14px; }
     .docbox .filled { font-weight: 600; } .docbox .blank { display: inline-block; min-width: 120px; border-bottom: 1px solid #999; }
     .progress { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 6px 0 14px; }
-    .progress > div { height: 100%; background: var(--ok); }
+    .progress > div { height: 100%; background: linear-gradient(90deg, var(--sage), var(--green)); }
+    .task.done .dot { background: var(--ok-bg); color: var(--ok); }
+    .hello { background: linear-gradient(135deg, #c9d9eb 0%, var(--sky) 100%); border-radius: 12px;
+      padding: 20px 22px 16px; margin-bottom: 16px; border-right: 6px solid var(--navy);
+      box-shadow: 6px 0 0 var(--sage); }
+    .hello h1 { font-size: 28px; margin: 0 0 6px; }
+    .hello p { color: var(--navy); margin: 0; }
+    .hello .progress { background: rgba(255, 255, 255, .6); margin: 12px 0 0; }
     .small-btn { padding: 3px 10px; font-size: 13px; }
   </style>
 </head>
 <body>
-  <header class="top"><span class="brand" style="color:#fff">Healthcare for Justice · Volunteers</span></header>
+  <header class="top"><span class="brand"><?!= include('Logo'); ?><span>Volunteer onboarding</span></span></header>
   <main id="app" class="portal"><p class="muted">Loading…</p></main>
   <div id="toast" class="toast" hidden></div>
   <script>
