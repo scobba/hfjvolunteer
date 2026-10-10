@@ -13,6 +13,7 @@
  * sensitive: field values go into the signed PDF only, never into the spreadsheet.
  * supervisor: a BH trainee's supervising clinician also signs, via an emailed link.
  * countersign: an HFJ admin signs after the volunteer (and supervisor).
+ * signOnce: a new Version doesn't ask people who already signed to sign again.
  */
 var DOC_FORMS = {
   phi_policy: {
@@ -24,7 +25,7 @@ var DOC_FORMS = {
     fields: [{ key: 'Role', label: 'Role', prefill: 'credential', required: true }]
   },
   background_auth: {
-    kind: 'sign', requirements: ['bg_auth'], sensitive: true,
+    kind: 'sign', requirements: ['bg_auth'], sensitive: true, signOnce: true,
     fields: [
       { key: 'LegalName', label: 'Full legal name', prefill: 'name', required: true },
       { key: 'OtherNames', label: 'Other names used (if any)' },
@@ -155,6 +156,33 @@ function requirementsSatisfiedBy(signatures, volunteer) {
       if (req === 'attestation') return; // tracked by LastAttestationDate instead
       out[req] = done[req === 'hipaa' ? 'confidentiality' : docKey];
     });
+  });
+  return out;
+}
+
+/**
+ * Documents this volunteer finished on an earlier Version than the one now in
+ * the Documents tab, once its EffectiveDate (blank = now) has arrived. A
+ * signature on the current Version, even one still waiting on a supervisor or
+ * HFJ, counts as done. People with nothing signed in the portal aren't listed:
+ * they have the document as an ordinary onboarding task instead.
+ * Returns [{ docKey, title, kind, signedVersion, version, effectiveDate }].
+ */
+function outdatedDocuments(volunteer, signatures, documents, today) {
+  var out = [];
+  documentsFor(volunteer).forEach(function (docKey) {
+    var form = DOC_FORMS[docKey];
+    var doc = documents[docKey];
+    if (!doc || form.attestation || form.signOnce) return;
+    if (isIsoDate(doc.EffectiveDate) && doc.EffectiveDate > today) return;
+    var version = String(doc.Version).trim();
+    var mine = signatures.filter(function (s) { return s.DocKey === docKey && s.Kind !== 'void'; });
+    if (mine.some(function (s) { return String(s.DocVersion).trim() === version; })) return;
+    var done = mine.filter(function (s) { return s.Status === SIGNATURE_STATUS.COMPLETE; })
+      .sort(function (a, b) { return String(a.SignedAt) < String(b.SignedAt) ? 1 : -1; })[0];
+    if (!done) return;
+    out.push({ docKey: docKey, title: doc.Title, kind: form.kind, signedVersion: String(done.DocVersion).trim(),
+      version: version, effectiveDate: isIsoDate(doc.EffectiveDate) ? doc.EffectiveDate : '' });
   });
   return out;
 }

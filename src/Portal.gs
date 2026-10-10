@@ -131,10 +131,12 @@ function portal_acknowledge(token, docKey) {
 function portal_sign(token, docKey, input) {
   return withLock_(function () {
     var v = portalVolunteer_(token, 'sign');
+    // Re-signing an updated document isn't onboarding; don't tell admins it finished.
+    var updateOnly = portalState_(v).tasks.every(function (t) { return t.status !== 'todo' || t.outdated; });
     signDocument_(v, String(docKey), input || {});
     var fresh = findRow_(TABS.VOLUNTEERS, 'VolunteerID', v.VolunteerID);
     var state = portalState_(fresh);
-    if (state.done) notifyVolunteerPartDone_(fresh, state.tasks);
+    if (state.done && !updateOnly) notifyVolunteerPartDone_(fresh, state.tasks);
     return state;
   });
 }

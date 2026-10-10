@@ -120,6 +120,15 @@
       }, 'Nothing waiting for a countersignature.', d.awaitingHfj.length ?
         '<div class="actions"><button class="secondary" id="csAll">Select all</button><button id="csGo">Countersign selected</button></div><div id="csHost"></div>' : '');
 
+      html += block('Needs to re-acknowledge', d.outdated, function (r) {
+        return '<li>' + vlink(r.volunteerId, r.name) + r.documents.map(function (o) {
+          return '<div class="small">' + esc(o.title) + ' <span class="muted">v' + esc(o.signedVersion) + ' → v' + esc(o.version) + '</span></div>';
+        }).join('') + '</li>';
+      }, 'Everyone is on the current version of every document.', d.outdated.length ? '<p class="small muted">' +
+        (d.sendUpdateRequests ? 'Each is emailed a fresh link by the daily job and reminded every ' +
+          'DocumentUpdateReminderDays until done.' : 'Update emails are off (SendDocumentUpdateEmails = FALSE). Use Resend link on their page.') +
+        ' This doesn\'t affect call eligibility.</p>' : '');
+
       html += block('Expiring soon', d.expiring, function (r) {
         return '<li>' + vlink(r.volunteerId, r.name) + ' — ' + esc(r.type) + '<div class="small">' +
           '<span class="chip ' + (r.window === 30 ? 'bad' : 'warn') + '">' + r.daysLeft + ' days</span> ' +

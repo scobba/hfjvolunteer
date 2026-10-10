@@ -24,9 +24,11 @@ function api_dashboard() {
   requireAdmin_();
   var p = policy_();
   var data = loadAll_();
-  data.signatures = readRows_(TABS.SIGNATURES);
-  var d = buildDashboard(data, today_(), { reminderLeadDays: p.reminderLeadDays, bgIntervalMonths: p.bgIntervalMonths });
   var docs = getDocuments_();
+  data.signatures = readRows_(TABS.SIGNATURES);
+  data.documents = docs;
+  var d = buildDashboard(data, today_(), { reminderLeadDays: p.reminderLeadDays, bgIntervalMonths: p.bgIntervalMonths });
+  d.sendUpdateRequests = p.sendUpdateRequests;
   d.missingDocuments = DOC_ORDER.filter(function (k) { return !docs[k]; })
     .map(function (k) { return DOC_DEFAULT_TITLES[k] + ' (' + k + ')'; });
   return d;
