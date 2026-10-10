@@ -114,9 +114,9 @@
       }, 'Nothing waiting for verification.');
 
       html += block('Awaiting HFJ countersignature', d.awaitingHfj, function (r) {
-        return '<li><label class="check"><input type="checkbox" data-cs="' + esc(r.signatureId) + '"> ' +
+        return '<li><label class="check"><input type="checkbox" data-cs="' + esc(r.signatureId) + '"> <span>' +
           vlink(r.volunteerId, r.name) + ' — ' + esc(r.title) + ' <span class="muted small">v' + esc(r.version) +
-          ', signed ' + esc(r.signedAt) + '</span></label></li>';
+          ', signed ' + esc(r.signedAt) + '</span></span></label></li>';
       }, 'Nothing waiting for a countersignature.', d.awaitingHfj.length ?
         '<div class="actions"><button class="secondary" id="csAll">Select all</button><button id="csGo">Countersign selected</button></div><div id="csHost"></div>' : '');
 
@@ -549,6 +549,10 @@
 
   function route() {
     var h = location.hash.replace(/^#\/?/, '');
+    var section = h.indexOf('v/') === 0 ? 'roster' : h;
+    document.querySelectorAll('.top nav a[href^="#"]').forEach(function (a) {
+      a.classList.toggle('active', a.getAttribute('href').replace(/^#\/?/, '') === section);
+    });
     if (h === 'roster') return renderRoster();
     if (h === 'new') return renderNew();
     if (h === 'invite') return renderInvite();
