@@ -2,7 +2,9 @@ import crypto from 'node:crypto';
 
 // A small in-memory stand-in for the Apps Script services the app uses,
 // enough to run setup → roster edits → migration → daily job end to end.
-// Mimics Sheets turning 'yyyy-MM-dd' strings into Dates unless the column is plain text.
+// Mimics Sheets turning 'yyyy-MM-dd' strings into Dates and "1.0" into the number 1
+// unless the cell is plain text. Sheet.appendRow ignores formats, which is the
+// pessimistic reading of what the real one did to Signatures.DocVersion.
 
 // One Date class for both the fake sheets and the app, as in a single Apps Script runtime.
 let clock = '2026-10-09';
@@ -12,19 +14,23 @@ export class GasDate extends Date {
 }
 
 class Sheet {
-  constructor(name) { this.name = name; this.rows = []; this.formats = {}; }
+  constructor(name) { this.name = name; this.rows = []; this.formats = {}; this.cellFormats = {}; this.maxRows = 1000; }
   getName() { return this.name; }
   getLastRow() { return this.rows.length; }
   getLastColumn() { return this.rows.reduce((m, r) => Math.max(m, r.length), 0); }
-  getMaxRows() { return Math.max(1000, this.rows.length); }
+  getMaxRows() { return Math.max(this.maxRows, this.rows.length); }
+  insertRowsAfter(_, n) { this.maxRows += n; }
   getRange(r, c, nr = 1, nc = 1) { return new Range(this, r, c, nr, nc); }
   getDataRange() { return this.getRange(1, 1, Math.max(this.getLastRow(), 1), Math.max(this.getLastColumn(), 1)); }
-  appendRow(values) { this.rows.push(values.map((v, i) => this.convert(v, i + 1))); }
+  appendRow(values) { this.rows.push(values.map((v) => this.convert(v, null, null))); }
   deleteRow(r) { this.rows.splice(r - 1, 1); }
   setFrozenRows() {}
   clear() { this.rows = []; }
-  convert(v, col) {
-    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && this.formats[col] !== '@') return new GasDate(v + 'T00:00:00Z');
+  convert(v, row, col) {
+    const fmt = col === null ? undefined : (this.cellFormats[row + ',' + col] || this.formats[col]);
+    if (typeof v !== 'string' || fmt === '@') return v;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return new GasDate(v + 'T00:00:00Z');
+    if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
     return v;
   }
 }
@@ -43,11 +49,15 @@ class Range {
     values.forEach((vals, i) => {
       const idx = this.r - 1 + i;
       while (this.sheet.rows.length <= idx) this.sheet.rows.push([]);
-      vals.forEach((v, j) => { this.sheet.rows[idx][this.c - 1 + j] = this.sheet.convert(v, this.c + j); });
+      vals.forEach((v, j) => { this.sheet.rows[idx][this.c - 1 + j] = this.sheet.convert(v, idx + 1, this.c + j); });
     });
     return this;
   }
   setValue(v) { return this.setValues([[v]]); }
+  setNumberFormats(formats) {
+    formats.forEach((row, i) => row.forEach((f, j) => { this.sheet.cellFormats[(this.r + i) + ',' + (this.c + j)] = f; }));
+    return this;
+  }
   setNumberFormat(f) { for (let j = 0; j < this.nc; j++) this.sheet.formats[this.c + j] = f; return this; }
   setFontWeight() { return this; }
   insertCheckboxes() { return this; }

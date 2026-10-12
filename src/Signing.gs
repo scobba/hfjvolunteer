@@ -48,7 +48,7 @@ function acknowledgeDocument_(v, docKey) {
   var doc = getDocuments_()[docKey];
   if (!doc) throw new Error('This document isn\'t available yet.');
   var existing = signaturesFor_(v.VolunteerID).filter(function (s) {
-    return s.DocKey === docKey && s.DocVersion === doc.Version && s.Status === SIGNATURE_STATUS.COMPLETE;
+    return s.DocKey === docKey && sameVersion(s.DocVersion, doc.Version) && s.Status === SIGNATURE_STATUS.COMPLETE;
   })[0];
   if (existing) return existing;
   var row = {
@@ -73,7 +73,7 @@ function signDocument_(v, docKey, input) {
   if (form.attestation) {
     var due = isIsoDate(v.LastAttestationDate) ? addYears(v.LastAttestationDate, 1) : '';
     if (due && daysBetween(today_(), due) > policy_().attestationLeadDays) throw new Error('Your attestation isn\'t due yet.');
-  } else if (open.some(function (s) { return s.DocVersion === doc.Version; })) {
+  } else if (open.some(function (s) { return sameVersion(s.DocVersion, doc.Version); })) {
     throw new Error('You have already signed this document.');
   }
 

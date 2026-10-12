@@ -190,3 +190,12 @@ test('a new document Version asks earlier signers to review it again, once effec
   assert.equal(d.outdated.length, 1);
   assert.equal(d.outdated[0].documents[0].title, 'PHI');
 });
+
+test('sameVersion: Sheets number vs typed text', () => {
+  assert.ok(app.sameVersion(1, '1.0'));
+  assert.ok(app.sameVersion('1', ' 1.0 '));
+  assert.ok(app.sameVersion('2.0.0', 2));
+  assert.ok(!app.sameVersion('1.1', '1.0'));
+  assert.ok(!app.sameVersion('1.10', '1.1'));
+  assert.ok(app.sameVersion('2026-A', '2026-A'));
+});
