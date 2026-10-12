@@ -89,12 +89,27 @@ function rowValues_(tab, headers, obj) {
   return headers.map(function (h) { return toCell_(obj[h], types[h] || 'text'); });
 }
 
+/** Cell formats by column type, mirroring Setup.formatColumns_. */
+var CELL_FORMATS = { text: '@', date: 'yyyy-mm-dd', datetime: 'yyyy-mm-dd hh:mm', int: '0', bool: 'General' };
+
+/**
+ * Sets each cell's format before writing, so Sheets keeps text as typed.
+ * Without it Sheets reads "1.0" as the number 1 and "1/2" as a date.
+ */
+function writeRow_(sh, tab, row, headers, values) {
+  var types = columnTypes_(tab);
+  var range = sh.getRange(row, 1, 1, headers.length);
+  range.setNumberFormats([headers.map(function (h) { return CELL_FORMATS[types[h] || 'text']; })]);
+  range.setValues([values]);
+}
+
 function appendRow_(tab, obj) {
   var sh = sheet_(tab);
   var headers = headers_(sh);
   var values = rowValues_(tab, headers, obj);
-  sh.appendRow(values);
-  var row = sh.getLastRow();
+  var row = sh.getLastRow() + 1;
+  if (row > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), 100);
+  writeRow_(sh, tab, row, headers, values);
   var types = columnTypes_(tab);
   headers.forEach(function (h, i) {
     if (types[h] === 'bool') sh.getRange(row, i + 1).insertCheckboxes().setValue(values[i]);
@@ -112,7 +127,7 @@ function updateRow_(tab, rowIndex, patch) {
   var merged = {};
   headers.forEach(function (h, i) { merged[h] = fromCell_(current[i], types[h] || 'text', tz); });
   Object.keys(patch).forEach(function (k) { if (k !== '_row') merged[k] = patch[k]; });
-  sh.getRange(rowIndex, 1, 1, headers.length).setValues([rowValues_(tab, headers, merged)]);
+  writeRow_(sh, tab, rowIndex, headers, rowValues_(tab, headers, merged));
 }
 
 function deleteRow_(tab, rowIndex) {

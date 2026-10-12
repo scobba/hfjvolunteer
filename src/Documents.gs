@@ -161,6 +161,18 @@ function requirementsSatisfiedBy(signatures, volunteer) {
 }
 
 /**
+ * True when two Version values name the same version. Sheets can turn a typed
+ * "1.0" into the number 1, so "1", "1.0" and 1 all match; "1.1" and "1.10" don't.
+ */
+function sameVersion(a, b) {
+  var key = function (v) {
+    var s = String(v === undefined || v === null ? '' : v).trim();
+    return /^\d+(\.\d+)*$/.test(s) ? s.replace(/(\.0+)+$/, '') : s;
+  };
+  return key(a) === key(b);
+}
+
+/**
  * Documents this volunteer finished on an earlier Version than the one now in
  * the Documents tab, once its EffectiveDate (blank = now) has arrived. A
  * signature on the current Version, even one still waiting on a supervisor or
@@ -177,7 +189,7 @@ function outdatedDocuments(volunteer, signatures, documents, today) {
     if (isIsoDate(doc.EffectiveDate) && doc.EffectiveDate > today) return;
     var version = String(doc.Version).trim();
     var mine = signatures.filter(function (s) { return s.DocKey === docKey && s.Kind !== 'void'; });
-    if (mine.some(function (s) { return String(s.DocVersion).trim() === version; })) return;
+    if (mine.some(function (s) { return sameVersion(s.DocVersion, version); })) return;
     var done = mine.filter(function (s) { return s.Status === SIGNATURE_STATUS.COMPLETE; })
       .sort(function (a, b) { return String(a.SignedAt) < String(b.SignedAt) ? 1 : -1; })[0];
     if (!done) return;

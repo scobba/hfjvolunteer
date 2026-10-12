@@ -18,6 +18,8 @@ function setup(opts) {
   app.updateRow_('Admins', 2, { Name: 'Anthony Walls' });
   const sh = gas.main.getSheetByName('Documents');
   DOCS.forEach((d) => sh.appendRow([...d, '']));
+  // As the CSV import leaves them: plain text, not the number Sheet.appendRow made of "1.0".
+  sh.rows.slice(1).forEach((r, i) => { r[2] = DOCS[i][2]; });
   return ctx;
 }
 
@@ -230,4 +232,25 @@ test('a new policy Version: dashboard lists who is behind, the daily job emails 
   assert.equal(plain(app.api_dashboard()).outdated.length, 0);
   assert.deepEqual(plain(app.readRows_('Signatures').filter((s) => s.DocKey === 'phi_policy').map((s) => s.DocVersion)), ['1.0', '1.1']);
   assert.ok(app.readRows_('AuditLog').some((a) => a.Action === 'reminder.documentUpdate'));
+});
+
+test('versions survive Sheets: "1.0" stays text, and rows already stored as the number 1 still match "1.0"', () => {
+  const { app, gas } = setup();
+  app.api_bulkInvite('Ann Lee, ann@example.com, MD', 'Active');
+  const token = tokenFrom(gas.sent[0], 't');
+  app.portal_acknowledge(token, 'phi_policy');
+  app.portal_sign(token, 'confidentiality', Object.assign({ fields: { Role: 'MD' } }, sig));
+  const sigs = gas.main.getSheetByName('Signatures');
+  const col = sigs.rows[0].indexOf('DocVersion');
+  assert.deepEqual(plain(sigs.rows.slice(1).map((r) => r[col])), ['1.0', '1.0'], 'written as text');
+
+  sigs.rows.slice(1).forEach((r) => { r[col] = 1; }); // what the live Sheet holds from before the fix
+  assert.equal(plain(app.api_dashboard()).outdated.length, 0);
+  assert.equal(plain(app.portal_bootstrap(token).tasks).find((t) => t.key === 'doc-confidentiality').status, 'done');
+  assert.throws(() => app.portal_sign(token, 'confidentiality', Object.assign({ fields: { Role: 'MD' } }, sig)), /already signed/);
+  const before = sigs.rows.length;
+  app.portal_acknowledge(token, 'phi_policy');
+  assert.equal(sigs.rows.length, before, 'no duplicate acknowledgment');
+  app.dailyJob();
+  assert.ok(!gas.sent.some((m) => /HFJ updated/.test(m.subject)));
 });
