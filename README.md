@@ -31,8 +31,8 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 - **Eligibility**: a volunteer is eligible on a date when they are Active,
   every requirement is complete, and no credential has expired or expires
   before that date. The license item is never ticked by hand. It's complete
-  when a *verified* credential of the right type is current. NPs need both an
-  RN license and an NP certificate.
+  when a *verified* credential of the right type is current. NPs need all three
+  of an RN license, an NP certificate and an NP furnishing number (HFJ NPs prescribe).
 - **Dashboard** shows five blocks: Needs your review, Expiring soon (30/60 days),
   Expired / not eligible, Onboarding in progress, and Coverage gaps (live once
   the Phase 3 calendar has data).

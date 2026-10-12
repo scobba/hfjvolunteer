@@ -106,6 +106,8 @@ var CREDENTIAL_TYPES = {
   'CA Physician Assistant License': { board: 'Physician Assistant Board', lookupUrl: DCA_SEARCH },
   'CA Registered Nurse License': { board: 'Board of Registered Nursing', lookupUrl: DCA_SEARCH },
   'CA Nurse Practitioner Certificate': { board: 'Board of Registered Nursing', lookupUrl: DCA_SEARCH },
+  // HFJ NPs prescribe, so the furnishing number is credentialed like a license.
+  'CA Nurse Practitioner Furnishing Number': { board: 'Board of Registered Nursing', lookupUrl: DCA_SEARCH },
   'CA Certified Nurse Assistant Certification': { board: 'CDPH Licensing & Certification', lookupUrl: 'https://www.apps.cdph.ca.gov/cvl/SearchPage.aspx' },
   'CA LMFT License': { board: 'Board of Behavioral Sciences', lookupUrl: DCA_SEARCH },
   'CA LCSW License': { board: 'Board of Behavioral Sciences', lookupUrl: DCA_SEARCH },
@@ -130,7 +132,8 @@ var CREDENTIAL_TYPES = {
 var VOLUNTEER_CREDENTIALS = {
   MD: { group: 'MD_DO', licenses: [['CA Physician & Surgeon License']] },
   DO: { group: 'MD_DO', licenses: [['CA Osteopathic Physician & Surgeon License']] },
-  NP: { group: 'NP_PA', licenses: [['CA Registered Nurse License'], ['CA Nurse Practitioner Certificate']] },
+  NP: { group: 'NP_PA', licenses: [['CA Registered Nurse License'], ['CA Nurse Practitioner Certificate'],
+    ['CA Nurse Practitioner Furnishing Number']] },
   PA: { group: 'NP_PA', licenses: [['CA Physician Assistant License']] },
   RN: { group: 'RN_CNA', licenses: [['CA Registered Nurse License']] },
   CNA: { group: 'RN_CNA', licenses: [['CA Certified Nurse Assistant Certification']] },

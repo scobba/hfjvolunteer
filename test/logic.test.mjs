@@ -70,13 +70,18 @@ test('unverified upload does not count; expiring before the shift date blocks', 
   assert.equal(e.eligible, true, 'valid through its expiration date');
 });
 
-test('NP needs both RN license and NP certificate', () => {
+test('NP needs the RN license, NP certificate and NP furnishing number', () => {
   const v = md({ Credential: 'NP' });
   const reqs = completeReqs(v);
   const rn = lic({ Type: 'CA Registered Nurse License' });
   assert.equal(app.evaluateEligibility(v, reqs, [rn], TODAY, {}).eligible, false);
   const np = lic({ CredentialID: 'CRED-00002', Type: 'CA Nurse Practitioner Certificate' });
-  assert.equal(app.evaluateEligibility(v, reqs, [rn, np], TODAY, {}).eligible, true);
+  assert.equal(app.evaluateEligibility(v, reqs, [rn, np], TODAY, {}).eligible, false);
+  const furnishing = lic({ CredentialID: 'CRED-00003', Type: 'CA Nurse Practitioner Furnishing Number' });
+  assert.equal(app.evaluateEligibility(v, reqs, [rn, np, furnishing], TODAY, {}).eligible, true);
+  const tasks = app.onboardingTasks(v, reqs, [rn, np], [], {}, TODAY, {}).filter((t) => t.type === 'credential');
+  assert.deepEqual(JSON.parse(JSON.stringify(tasks.map((t) => t.title + ':' + t.status))), [
+    'CA Registered Nurse License:done', 'CA Nurse Practitioner Certificate:done', 'CA Nurse Practitioner Furnishing Number:todo']);
 });
 
 test('other lapsed credentials block unless renewed', () => {
