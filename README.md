@@ -103,7 +103,20 @@ public. There's one row per document:
 | Body | The text. `# Title`, `## Heading`, `- bullet`, `1. numbered`, blank line = new paragraph, `{{Name}}` / `{{Date}}` / `{{SupervisingPhysician}}` etc. = filled-in blanks |
 | Notes | For you; not shown |
 
-**Change the Version whenever the wording changes.** A document missing
+**Change the Version whenever the wording changes.** Fixing a typo? Leave
+the Version alone. A new Version asks everyone who acknowledged or signed an
+older one to do it again, from its EffectiveDate (blank = right away):
+
+- Their portal shows the document as *To do* again, with a note saying what changed.
+- The dashboard lists them under **Needs to re-acknowledge**.
+- The daily job emails each of them a fresh personal link, which replaces their
+  old one. It repeats every `DocumentUpdateReminderDays` (14) until they're done.
+  Set `SendDocumentUpdateEmails` to FALSE to stop the emails.
+- Call eligibility isn't affected.
+- The background check authorization and the annual attestation never ask
+  for this: one is signed once, the other is yearly anyway.
+
+A document missing
 from the tab shows volunteers *HFJ is finalizing this document* (that's how
 the Nurse/CNA agreement appears until it exists). The **Documents** page in
 the dashboard previews each one.

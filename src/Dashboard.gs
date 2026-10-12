@@ -1,7 +1,7 @@
 /**
  * Admin dashboard blocks (spec §6). Pure: takes plain rows, returns plain data.
  *
- * data: { volunteers, credentials, requirements, shifts }
+ * data: { volunteers, credentials, requirements, shifts, signatures?, documents? }
  * opts: { reminderLeadDays, bgIntervalMonths }
  */
 
@@ -26,7 +26,8 @@ function buildDashboard(data, today, opts) {
   var lead = opts.reminderLeadDays || 60;
   var current = data.volunteers.filter(function (v) { return CURRENT_STATUSES.indexOf(v.Status) !== -1; });
 
-  var needsReview = [], expiring = [], ineligible = [], onboarding = [];
+  var needsReview = [], expiring = [], ineligible = [], onboarding = [], outdated = [];
+  var sigsBy = groupBy(data.signatures || [], 'VolunteerID');
 
   current.forEach(function (v) {
     var creds = credsBy[v.VolunteerID] || [];
@@ -53,6 +54,9 @@ function buildDashboard(data, today, opts) {
       }
     });
 
+    var stale = outdatedDocuments(v, sigsBy[v.VolunteerID] || [], data.documents || {}, today);
+    if (stale.length) outdated.push(Object.assign({}, person, { documents: stale }));
+
     var reqs = reqsBy[v.VolunteerID] || [];
     if (v.Status === 'Active') {
       var e = evaluateEligibility(v, reqs, creds, today, { bgIntervalMonths: opts.bgIntervalMonths });
@@ -76,6 +80,7 @@ function buildDashboard(data, today, opts) {
     today: today,
     needsReview: needsReview,
     awaitingHfj: awaitingHfj,
+    outdated: outdated,
     expiring: expiring,
     ineligible: ineligible,
     onboarding: onboarding,

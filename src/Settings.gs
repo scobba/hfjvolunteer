@@ -29,6 +29,8 @@ function policy_() {
     overdueIntervalDays: settingInt_(s, 'OverdueReminderIntervalDays', 30),
     attestationLeadDays: settingInt_(s, 'AttestationReminderLeadDays', 30),
     sendToVolunteers: settingBool_(s, 'SendVolunteerReminders'),
+    sendUpdateRequests: settingBool_(s, 'SendDocumentUpdateEmails'),
+    updateReminderDays: settingInt_(s, 'DocumentUpdateReminderDays', 14),
     blockIneligibleClaims: settingBool_(s, 'BlockIneligibleClaims'),
     calendarHorizonDays: settingInt_(s, 'CalendarHorizonDays', 180)
   };

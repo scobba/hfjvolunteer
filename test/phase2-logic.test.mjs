@@ -141,3 +141,52 @@ test('source: Drive sharing happens in exactly one place, behind the guard', asy
   assert.equal((drive.match(/Permissions\.create/g) || []).length, 1);
   assert.match(drive, /assertAllowedShare\(permission, admins, domain\);\s*Drive\.Permissions\.create\(permission/);
 });
+
+test('a new document Version asks earlier signers to review it again, once effective', () => {
+  const v = vol({ ProfileConfirmedAt: '2026-10-01T00:00:00Z' });
+  const docs = {
+    phi_policy: { Title: 'PHI', Version: '1.1', EffectiveDate: '2026-10-09' },
+    confidentiality: { Title: 'Conf', Version: '1.0', EffectiveDate: '' },
+    background_auth: { Title: 'BG', Version: '2.0', EffectiveDate: '' },
+    vpa: { Title: 'VPA', Version: '2.0', EffectiveDate: '2026-11-01' }
+  };
+  const sigs = [
+    { DocKey: 'phi_policy', DocVersion: '1.0', Kind: 'ack', Status: 'Complete', SignedAt: '2026-05-01T00:00:00Z' },
+    { DocKey: 'confidentiality', DocVersion: '1.0', Kind: 'sign', Status: 'Complete', SignedAt: '2026-05-01T00:00:00Z' },
+    { DocKey: 'background_auth', DocVersion: '1.0', Kind: 'sign', Status: 'Complete', SignedAt: '2026-05-01T00:00:00Z' },
+    { DocKey: 'vpa', DocVersion: '1.0', Kind: 'sign', Status: 'Complete', SignedAt: '2026-05-01T00:00:00Z' }
+  ];
+  const out = plain(app.outdatedDocuments(v, sigs, docs, '2026-10-09'));
+  assert.deepEqual(out.map((o) => o.docKey), ['phi_policy'], 'background check is signed once; VPA v2 not effective yet');
+  assert.equal(out[0].signedVersion, '1.0');
+  assert.equal(app.outdatedDocuments(v, sigs, docs, '2026-11-01').length, 2);
+  assert.equal(app.outdatedDocuments(v, sigs.concat({ DocKey: 'phi_policy', DocVersion: '1.1', Kind: 'ack', Status: 'Complete' }), docs, '2026-10-09').length, 0);
+  assert.equal(app.outdatedDocuments(v, sigs.concat({ DocKey: 'vpa', DocVersion: '2.0', Kind: 'sign', Status: 'Awaiting HFJ' }), docs, '2026-11-01').length, 1,
+    'signed v2, waiting on HFJ: nothing more for them to do');
+  assert.equal(app.outdatedDocuments(v, [], docs, '2026-10-09').length, 0, 'never signed in the portal: an ordinary task, not an update');
+
+  const task = plain(app.onboardingTasks(v, [], [], sigs, docs, '2026-10-09', {})).find((t) => t.key === 'doc-phi_policy');
+  assert.equal(task.status, 'todo');
+  assert.ok(task.outdated);
+  assert.match(task.note, /version 1\.1 \(you acknowledged version 1\.0\)/);
+
+  const sigsBy = { 'HFJV-00001': sigs };
+  let plan = plain(app.planDocumentUpdates([v], sigsBy, docs, '2026-10-09', 14, {}));
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].key, 'docupdate|HFJV-00001|phi_policy@1.1');
+  const log = { [plan[0].key]: { lastSent: '2026-10-01' } };
+  assert.equal(app.planDocumentUpdates([v], sigsBy, docs, '2026-10-09', 14, log).length, 0, 'not again within 14 days');
+  plan = plain(app.planDocumentUpdates([v], sigsBy, docs, '2026-10-15', 14, log));
+  assert.equal(plan[0].reminder, true);
+  assert.equal(app.planDocumentUpdates([v], sigsBy, docs, '2026-11-01', 14, log)[0].reminder, false, 'a second update starts over');
+  assert.equal(app.planDocumentUpdates([vol({ Status: 'Departed' })], sigsBy, docs, '2026-10-09', 14, {}).length, 0);
+
+  const mail = app.documentUpdateEmail(v, plan[0], 'https://x/exec?t=abc');
+  assert.match(mail.subject, /^Reminder: HFJ updated PHI$/);
+  assert.match(mail.body, /- PHI \(version 1\.1\): please acknowledge it again/);
+  assert.match(mail.body, /https:\/\/x\/exec\?t=abc/);
+
+  const d = plain(app.buildDashboard({ volunteers: [v], credentials: [], requirements: [], shifts: [], signatures: sigs.map((s) => Object.assign({ VolunteerID: v.VolunteerID }, s)), documents: docs }, '2026-10-09', {}));
+  assert.equal(d.outdated.length, 1);
+  assert.equal(d.outdated[0].documents[0].title, 'PHI');
+});

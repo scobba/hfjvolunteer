@@ -198,3 +198,36 @@ test('nothing is ever shared publicly, and the portal never hands out Drive link
   assert.ok(!gas.permissions.some((p) => p.emailAddress === 'someone@gmail.com'), 'off-domain "admin" refused');
   assert.ok(app.readRows_('AuditLog').some((r) => r.Action === 'drive.share.error'));
 });
+
+test('a new policy Version: dashboard lists who is behind, the daily job emails a fresh link, re-acknowledging clears it', () => {
+  const { app, gas } = setup();
+  app.api_bulkInvite('Ann Lee, ann@example.com, MD', 'Active');
+  const first = tokenFrom(gas.sent[0], 't');
+  app.portal_acknowledge(first, 'phi_policy');
+  app.dailyJob();
+  assert.equal(plain(app.api_dashboard()).outdated.length, 0);
+  assert.ok(!gas.sent.some((m) => /updated/.test(m.subject)));
+
+  const sh = gas.main.getSheetByName('Documents');
+  const row = sh.rows.findIndex((r) => r[0] === 'phi_policy');
+  sh.rows[row][2] = '1.1';
+  sh.rows[row][4] = '# PHI Policy\nNew EMR steps.';
+  const d = plain(app.api_dashboard());
+  assert.deepEqual(d.outdated.map((r) => r.documents.map((o) => o.signedVersion + '>' + o.version)), [['1.0>1.1']]);
+
+  app.dailyJob();
+  const mails = gas.sent.filter((m) => m.to === 'ann@example.com' && /HFJ updated PHI Policy/.test(m.subject));
+  assert.equal(mails.length, 1);
+  app.dailyJob();
+  assert.equal(gas.sent.filter((m) => /HFJ updated/.test(m.subject)).length, 1, 'once per interval');
+  assert.throws(() => app.portal_bootstrap(first), /no longer valid/, 'the email carries the new link');
+  const token = tokenFrom(mails[0], 't');
+  const task = plain(app.portal_bootstrap(token).tasks).find((t) => t.key === 'doc-phi_policy');
+  assert.equal(task.status, 'todo');
+  assert.match(task.note, /version 1\.1/);
+
+  app.portal_acknowledge(token, 'phi_policy');
+  assert.equal(plain(app.api_dashboard()).outdated.length, 0);
+  assert.deepEqual(plain(app.readRows_('Signatures').filter((s) => s.DocKey === 'phi_policy').map((s) => s.DocVersion)), ['1.0', '1.1']);
+  assert.ok(app.readRows_('AuditLog').some((a) => a.Action === 'reminder.documentUpdate'));
+});

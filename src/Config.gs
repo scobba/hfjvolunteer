@@ -83,6 +83,8 @@ var SETTING_DEFAULTS = [
   ['OverdueReminderIntervalDays', '30', 'Repeat interval for expired-credential reminders.'],
   ['AttestationReminderLeadDays', '30', 'Days before annual attestation is due that the volunteer is reminded.'],
   ['SendVolunteerReminders', 'FALSE', 'FALSE = reminders go to admins only. Flip to TRUE once backfill is done.'],
+  ['SendDocumentUpdateEmails', 'TRUE', 'TRUE = when a document gets a new Version, email the people who signed an older one a link to review it.'],
+  ['DocumentUpdateReminderDays', '14', 'Days between repeat emails while a document update is still waiting.'],
   ['AdminDomain', 'hfjvc.org', 'Admins must sign in with an account on this domain.'],
   ['MigrationSourceTabs', '', 'Old roster tabs copied into this Sheet, comma-separated. Blank = every tab named "Copy of …".']
 ];
