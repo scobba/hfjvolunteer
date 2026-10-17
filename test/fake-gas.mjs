@@ -88,17 +88,22 @@ export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {
   const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
   const blob = (bytes, mime) => ({ bytes, mime, name: '', setName(n) { this.name = n; return this; } });
   const state = { user, effective: 'volunteers@hfjvc.org', triggers: [] };
-  // Google Calendar: calendars by id, each with its events. `external` holds calendars shared with the account.
+  // Google Calendar: calendars by id, each with its events and who may use it
+  // (acl: email → 'owner' | 'writer' | 'reader'). The script acts as state.effective.
   const calendars = {};
   let calSeq = 0, evSeq = 0;
-  const makeCalendar = (id, name) => {
-    const cal = { id, name, events: [], owner: state.effective,
+  const canWrite = (cal) => ['owner', 'writer'].includes(cal.acl[state.effective]);
+  const makeCalendar = (id, name, acl) => {
+    const cal = { id, name, events: [], acl: acl || { [state.effective]: 'owner' },
       getId: () => id,
-      isOwnedByMe: () => cal.owner === state.effective,
+      getName: () => name,
+      isOwnedByMe: () => cal.acl[state.effective] === 'owner',
       createEvent(title, start, end, opts = {}) {
+        if (!canWrite(cal)) throw new Error('You do not have permission to create events in this calendar.');
         const ev = { id: 'ev' + ++evSeq, title, start, end, opts, deleted: false,
           getId() { return this.id; }, getTitle() { return this.title; }, isAllDayEvent: () => false,
-          getStartTime() { return this.start; }, deleteEvent() { this.deleted = true; } };
+          getStartTime() { return this.start; },
+          deleteEvent() { if (!canWrite(cal)) throw new Error('No permission'); this.deleted = true; } };
         cal.events.push(ev);
         return ev;
       },
@@ -115,7 +120,7 @@ export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {
       Date: GasDate,
       Logger: { log() {} },
       CalendarApp: {
-        getCalendarById: (id) => calendars[id] || null,
+        getCalendarById: (id) => (calendars[id] && calendars[id].acl[state.effective] ? calendars[id] : null),
         createCalendar: (name) => makeCalendar('cal' + ++calSeq + '@group.calendar.google.com', name),
       },
       SpreadsheetApp: {

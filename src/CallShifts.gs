@@ -31,25 +31,26 @@ function setSetting_(key, value) {
 }
 
 /**
- * The HFJ On Call calendar if this account owns it, else null. Run from the
- * Sheet menu, the daily job runs as the admin who clicked, who doesn't own it.
+ * The call calendar (Settings.CallCalendarId) if this account can open it,
+ * else null. It's either the HFJ On Call calendar the app created, or an
+ * existing HFJ calendar shared with the app's account (useCallCalendar_).
  */
 function callCalendar_() {
   var id = String(getSettings_().CallCalendarId || '').trim();
-  var cal = id ? CalendarApp.getCalendarById(id) : null;
-  return cal && cal.isOwnedByMe() ? cal : null;
+  return id ? CalendarApp.getCalendarById(id) : null;
 }
 
 /**
- * The HFJ On Call calendar, created on first use. Only the web app (which
- * always runs as volunteers@) creates it; once it exists, another account
- * gets an error rather than a second calendar.
+ * The call calendar, creating HFJ On Call on first use if none is set. Only
+ * a blank CallCalendarId creates one, so an account that can't open the
+ * chosen calendar (an admin running the daily job from the Sheet menu) gets an
+ * error rather than a second calendar.
  */
 function ensureCallCalendar_() {
   var cal = callCalendar_();
   if (cal) return cal;
   var id = String(getSettings_().CallCalendarId || '').trim();
-  if (id) throw new Error('The HFJ On Call calendar belongs to another account. Calendar changes are made by the HFJ Volunteers account.');
+  if (id) throw new Error('Can\'t open the call calendar. It must be shared with the HFJ Volunteers account with "Make changes to events".');
   cal = CalendarApp.createCalendar(CALL_CALENDAR_NAME, {
     timeZone: getSpreadsheet_().getSpreadsheetTimeZone(),
     summary: 'Healthcare for Justice call schedule. Managed by the HFJ Volunteers app; changes made here are overwritten.'
@@ -70,7 +71,7 @@ function authorizeCalendar() {
   var me = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
   if (!me || currentEmail_() !== me) throw new Error('Run authorizeCalendar from the Apps Script editor.');
   var cal = callCalendar_();
-  var msg = cal ? 'HFJ On Call calendar: ' + cal.getId() : 'Calendar access approved for ' + me + '.';
+  var msg = cal ? 'Call calendar: ' + cal.getName() + ' (' + cal.getId() + ')' : 'Calendar access approved for ' + me + '.';
   Logger.log(msg);
   return msg;
 }
@@ -93,6 +94,11 @@ function syncShiftEvent_(row, v, invite) {
 
 function removeShiftEvent_(row) {
   if (!row.CalendarEventId) return;
+  // An imported multi-day event covers several claims; it goes only with the last of them.
+  var shared = readRows_(TABS.CALL_SHIFTS).some(function (s) {
+    return s._row !== row._row && s.CalendarEventId === row.CalendarEventId && s.VolunteerID && !s.ReleasedAt;
+  });
+  if (shared) return;
   try {
     var ev = ensureCallCalendar_().getEventById(row.CalendarEventId);
     if (ev) ev.deleteEvent();
@@ -104,7 +110,9 @@ function removeShiftEvent_(row) {
 /**
  * Claims `date` for a volunteer. Inside the lock. Returns { warning } when the
  * volunteer isn't eligible on that date and BlockIneligibleClaims is off.
- * opts: { byAdmin, source: 'portal' | 'admin' | 'import', invite }
+ * opts: { byAdmin, source: 'portal' | 'admin' | 'import', invite, eventId }
+ * eventId: an event already on the call calendar for this day (an import from
+ * that same calendar), linked instead of adding a duplicate.
  */
 function claimShift_(volunteerId, date, actor, opts) {
   var v = findRow_(TABS.VOLUNTEERS, 'VolunteerID', volunteerId);
@@ -127,7 +135,12 @@ function claimShift_(volunteerId, date, actor, opts) {
   row._row = appendRow_(TABS.CALL_SHIFTS, row);
   logAudit_(actor, 'shift.claim', 'CallShift', date, volunteerId + (opts.source === 'portal' ? '' : ' (' + opts.source + ')') +
     (e.eligible ? '' : ' — not eligible: ' + e.reasons.join('; ')));
-  syncShiftEvent_(row, v, opts.invite !== false);
+  var existing = null;
+  if (opts.eventId) {
+    try { existing = callCalendar_() && callCalendar_().getEventById(String(opts.eventId)); } catch (err) { existing = null; }
+  }
+  if (existing) updateRow_(TABS.CALL_SHIFTS, row._row, { CalendarEventId: existing.getId() });
+  else syncShiftEvent_(row, v, opts.invite !== false);
   if (!e.eligible && !opts.byAdmin) {
     notifyAdmins_(v.Name + ' claimed ' + date + ' but isn\'t eligible', [
       v.Name + ' (' + volunteerId + ') claimed call on ' + date + '. Eligibility is warn-only (BlockIneligibleClaims = FALSE), so the claim stands.',
@@ -159,24 +172,57 @@ function releaseShift_(volunteerId, date, actor, byAdmin) {
   }
 }
 
-/** Adds calendar events for upcoming claims that don't have one (a failed sync). Skipped by an account that doesn't own the calendar. */
+/**
+ * Adds calendar events for upcoming claims that don't have one (a failed
+ * sync). Skipped by an account that can't open the calendar, and stops at the
+ * first failure (an account that can only read it) rather than logging one
+ * error per day.
+ */
 function syncMissingEvents_() {
   if (!callCalendar_()) return 0;
   var today = today_();
   var volunteers = {};
   readRows_(TABS.VOLUNTEERS).forEach(function (v) { volunteers[v.VolunteerID] = v; });
-  var n = 0;
+  var n = 0, failed = false;
   readRows_(TABS.CALL_SHIFTS).forEach(function (s) {
-    if (!s.VolunteerID || s.ReleasedAt || s.CalendarEventId || s.ShiftDate < today || !volunteers[s.VolunteerID]) return;
+    if (failed || !s.VolunteerID || s.ReleasedAt || s.CalendarEventId || s.ShiftDate < today || !volunteers[s.VolunteerID]) return;
     if (syncShiftEvent_(s, volunteers[s.VolunteerID], s.Source !== 'import')) n++;
+    else failed = true;
   });
   return n;
 }
 
 /**
+ * Uses an existing Google Calendar (shared with this account with "Make changes
+ * to events") for call days instead of creating HFJ On Call. Checks it can
+ * write there with a throwaway event. Refused once upcoming days have events
+ * on the current calendar, since those would be left behind. Inside the lock.
+ */
+function useCallCalendar_(calendarId, actor) {
+  var id = String(calendarId || '').trim();
+  var cal = id ? CalendarApp.getCalendarById(id) : null;
+  if (!cal) throw new Error('Can\'t open that calendar. Share it with the HFJ Volunteers account with "Make changes to events", and check the calendar ID.');
+  var current = String(getSettings_().CallCalendarId || '').trim();
+  if (id === current) return cal;
+  var today = today_();
+  if (current && readRows_(TABS.CALL_SHIFTS).some(function (s) { return s.VolunteerID && !s.ReleasedAt && s.CalendarEventId && s.ShiftDate >= today; })) {
+    throw new Error('Upcoming call days are already on the current calendar. Change calendars before days are claimed.');
+  }
+  try {
+    var now = new Date();
+    cal.createEvent('HFJ Volunteers access check', now, new Date(now.getTime() + 60000)).deleteEvent();
+  } catch (e) {
+    throw new Error('The HFJ Volunteers account can see that calendar but can\'t add events. Share it with "Make changes to events".');
+  }
+  setSetting_('CallCalendarId', id);
+  logAudit_(actor, 'calendar.use', 'Calendar', id, cal.getName() + (current ? ' (was ' + current + ')' : ''));
+  return cal;
+}
+
+/**
  * Reads an existing call calendar (shared with this account) between two
- * dates, as [{ date, title }]: an all-day event becomes one item per day, a
- * timed one is dated by its start.
+ * dates, as [{ date, title, eventId }]: an all-day event becomes one item per
+ * day, a timed one is dated by its start.
  */
 function readExternalCalendar_(calendarId, from, to) {
   var cal = CalendarApp.getCalendarById(String(calendarId || '').trim());
@@ -190,9 +236,9 @@ function readExternalCalendar_(calendarId, from, to) {
     if (ev.isAllDayEvent()) {
       var d = Utilities.formatDate(ev.getAllDayStartDate(), tz, 'yyyy-MM-dd');
       var last = Utilities.formatDate(ev.getAllDayEndDate(), tz, 'yyyy-MM-dd');
-      for (; d < last; d = addDays(d, 1)) if (d >= from && d <= to) out.push({ date: d, title: title });
+      for (; d < last; d = addDays(d, 1)) if (d >= from && d <= to) out.push({ date: d, title: title, eventId: ev.getId() });
     } else {
-      out.push({ date: Utilities.formatDate(ev.getStartTime(), tz, 'yyyy-MM-dd'), title: title });
+      out.push({ date: Utilities.formatDate(ev.getStartTime(), tz, 'yyyy-MM-dd'), title: title, eventId: ev.getId() });
     }
   });
   return out.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });

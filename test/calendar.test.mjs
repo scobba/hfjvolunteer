@@ -196,32 +196,85 @@ test('daily job: on-call-tomorrow reminder and coverage gap alerts, each once', 
   setClock(TODAY);
 });
 
-test('import from an existing call calendar: preview matches names, import saves claims without invitations', () => {
+const allDay = (title, from, to, id) => ({ id, title, deleted: false, start: new GasDate(from + 'T00:00:00Z'), end: new GasDate(to + 'T00:00:00Z'),
+  getId() { return this.id; }, getTitle() { return this.title; }, isAllDayEvent: () => true,
+  getAllDayStartDate() { return this.start; }, getAllDayEndDate() { return this.end; }, deleteEvent() { this.deleted = true; } });
+
+test('import from another calendar: preview matches names, import adds days to the call calendar without invitations', () => {
   const ctx = setup();
   const { app, gas } = ctx;
   const ann = app.api_createVolunteer({ Name: 'Ann Lee', Email: 'ann@example.com', Credential: 'MD', Status: 'Active' });
   const bo = app.api_createVolunteer({ Name: 'Bo Diaz', Email: 'bo@example.com', Credential: 'PA', Status: 'Active' });
-  const old = gas.makeCalendar('oldcall@group.calendar.google.com', 'Old call schedule');
+  const old = gas.makeCalendar('oldcall@group.calendar.google.com', 'Old call schedule',
+    { 'anthony@hfjvc.org': 'owner', 'volunteers@hfjvc.org': 'reader' });
+  old.events.push(allDay('Bo Diaz', '2026-10-14', '2026-10-16', 'evBo'));
+  gas.state.effective = 'anthony@hfjvc.org';
   old.createEvent('Lee on call', new GasDate('2026-10-12T17:00:00Z'), new GasDate('2026-10-13T17:00:00Z'));
-  old.events.push({ title: 'Bo Diaz', deleted: false, start: new GasDate('2026-10-14T00:00:00Z'), end: new GasDate('2026-10-16T00:00:00Z'),
-    getTitle() { return this.title; }, isAllDayEvent: () => true,
-    getAllDayStartDate() { return this.start; }, getAllDayEndDate() { return this.end; } });
   old.createEvent('Staff meeting', new GasDate('2026-10-20T17:00:00Z'), new GasDate('2026-10-20T18:00:00Z'));
+  gas.state.effective = 'volunteers@hfjvc.org';
 
   assert.throws(() => app.api_importPreview('nope@group.calendar.google.com', TODAY, '2026-12-31'), /Share it with/);
   const prev = plain(app.api_importPreview(old.id, TODAY, '2026-12-31'));
+  assert.equal(prev.linked, false);
   assert.deepEqual(prev.rows.map((r) => [r.date, r.volunteerId]),
     [['2026-10-12', ann], ['2026-10-14', bo], ['2026-10-15', bo], ['2026-10-20', '']]);
   assert.equal(app.readRows_('CallShifts').length, 0, 'preview saves nothing');
 
-  const res = plain(app.api_importShifts(prev.rows.concat([{ date: '2026-10-12', volunteerId: bo }]), false));
+  const res = plain(app.api_importShifts(prev.rows.concat([{ date: '2026-10-12', volunteerId: bo }]), false, old.id));
   assert.equal(res.imported, 3);
   assert.equal(res.skipped.length, 1);
   assert.match(res.skipped[0], /already taken/);
   const evs = hfjCal(gas).events;
-  assert.equal(evs.length, 3);
+  assert.equal(evs.length, 3, 'copied onto the call calendar');
   assert.ok(evs.every((e) => !e.opts.guests), 'no invitations unless asked');
   assert.ok(app.readRows_('CallShifts').every((r) => r.Source === 'import'));
+  assert.equal(old.events.filter((e) => !e.deleted).length, 3, 'the old calendar is untouched');
+});
+
+test('an existing HFJ calendar can be the call calendar: checked, then its events are linked, not copied', () => {
+  const ctx = setup();
+  const { app, gas } = ctx;
+  const ann = app.api_createVolunteer({ Name: 'Ann Lee', Email: 'ann@example.com', Credential: 'MD', Status: 'Active' });
+  const bo = app.api_createVolunteer({ Name: 'Bo Diaz', Email: 'bo@example.com', Credential: 'PA', Status: 'Active' });
+  const hfj = gas.makeCalendar('hfjcall@group.calendar.google.com', 'HFJ Call Schedule',
+    { 'anthony@hfjvc.org': 'owner', 'volunteers@hfjvc.org': 'reader' });
+  gas.state.effective = 'anthony@hfjvc.org';
+  const annEv = hfj.createEvent('Ann Lee', new GasDate('2026-10-12T17:00:00Z'), new GasDate('2026-10-13T17:00:00Z'));
+  gas.state.effective = 'volunteers@hfjvc.org';
+  hfj.events.push(allDay('Bo Diaz', '2026-10-14', '2026-10-16', 'evBo'));
+
+  assert.throws(() => app.api_useCalendar('nope@group.calendar.google.com', '2026-10'), /Make changes to events/);
+  assert.throws(() => app.api_useCalendar(hfj.id, '2026-10'), /can't add events/, 'see-only sharing is not enough');
+  hfj.acl['volunteers@hfjvc.org'] = 'writer';
+  let cal = plain(app.api_useCalendar(hfj.id, '2026-10'));
+  assert.equal(cal.calendarName, 'HFJ Call Schedule');
+  assert.equal(app.getSettings_().CallCalendarId, hfj.id);
+  assert.equal(hfj.events.filter((e) => !e.deleted).length, 2, 'the access check leaves nothing behind');
+
+  const prev = plain(app.api_importPreview(hfj.id, TODAY, '2026-12-31'));
+  assert.equal(prev.linked, true);
+  app.api_importShifts(prev.rows, false, hfj.id);
+  assert.equal(hfj.events.filter((e) => !e.deleted).length, 2, 'linked, no duplicates');
+  const rows = app.readRows_('CallShifts');
+  assert.deepEqual(plain(rows.map((r) => [r.ShiftDate, r.CalendarEventId])),
+    [['2026-10-12', annEv.id], ['2026-10-14', 'evBo'], ['2026-10-15', 'evBo']]);
+  assert.equal(Object.values(gas.calendars).filter((c) => c.name === 'HFJ On Call').length, 0, 'no new calendar');
+
+  // New claims go on the same calendar; releasing removes the event, but a two-day event stays until both days go.
+  const token = invite(ctx, 'Cy Park, cy@example.com, NP');
+  app.portal_claim(token, '2026-11-02', '2026-11');
+  assert.ok(hfj.events.some((e) => e.title === 'HFJ on call: Cy Park' && !e.deleted));
+  app.api_unassignShift('2026-10-14', '2026-10');
+  assert.ok(!hfj.events.find((e) => e.id === 'evBo').deleted, 'still covers Oct 15');
+  app.api_unassignShift('2026-10-15', '2026-10');
+  assert.ok(hfj.events.find((e) => e.id === 'evBo').deleted);
+  app.api_unassignShift('2026-10-12', '2026-10');
+  assert.ok(annEv.deleted);
+
+  assert.throws(() => app.api_useCalendar(gas.makeCalendar('other@group.calendar.google.com', 'Other').id, '2026-11'), /already on the current calendar/);
+  assert.equal(app.api_importShifts([{ date: '2026-11-03', volunteerId: ann, eventId: 'forged' }], false, hfj.id).imported, 1);
+  assert.ok(hfj.events.some((e) => e.title === 'HFJ on call: Ann Lee' && !e.deleted), 'an id not on the calendar is not linked');
+  assert.ok(!app.readRows_('CallShifts').some((r) => r.CalendarEventId === 'forged'));
 });
 
 test('the dashboard coverage block goes live with the calendar', () => {
@@ -246,7 +299,7 @@ test('authorizeCalendar runs only for the account itself, and never creates a ca
   const id = app.api_createVolunteer({ Name: 'Ann Lee', Email: 'ann@example.com', Credential: 'MD', Status: 'Active' });
   app.api_assignShift('2026-10-20', id, '2026-10');
   gas.state.user = 'volunteers@hfjvc.org';
-  assert.match(app.authorizeCalendar(), /HFJ On Call calendar: cal1/);
+  assert.match(app.authorizeCalendar(), /Call calendar: HFJ On Call \(cal1/);
 });
 
 test('run as an admin from the Sheet menu, the daily job leaves the calendar alone', () => {
@@ -255,13 +308,28 @@ test('run as an admin from the Sheet menu, the daily job leaves the calendar alo
   const id = app.api_createVolunteer({ Name: 'Ann Lee', Email: 'ann@example.com', Credential: 'MD', Status: 'Active' });
   app.api_assignShift('2026-10-20', id, '2026-10'); // web app: runs as volunteers@, creates HFJ On Call
   const hfj = hfjCal(gas);
+  const real = hfj.createEvent;
   hfj.createEvent = () => { throw new Error('down'); };
   app.api_assignShift('2026-10-21', id, '2026-10');
+  app.api_assignShift('2026-10-22', id, '2026-10');
+  hfj.createEvent = real;
   const calId = app.getSettings_().CallCalendarId;
+  const errors = () => app.readRows_('AuditLog').filter((a) => a.Action === 'calendar.error').length;
+  const before = errors();
+
   gas.state.effective = 'anthony@hfjvc.org'; // menu run: the script runs as the admin who clicked
   app.dailyJob();
   assert.equal(Object.keys(gas.calendars).length, 1, 'no second calendar');
   assert.equal(app.getSettings_().CallCalendarId, calId);
-  assert.equal(app.readRows_('CallShifts').pop().CalendarEventId, '', 'left for the owner to sync');
-  assert.throws(() => app.ensureCallCalendar_(), /belongs to another account/);
+  assert.equal(errors(), before, 'no access: skipped quietly');
+  assert.throws(() => app.ensureCallCalendar_(), /Can't open the call calendar/);
+
+  hfj.acl['anthony@hfjvc.org'] = 'reader'; // can see it but not change it
+  app.dailyJob();
+  assert.equal(errors(), before + 1, 'one error, not one per day');
+  assert.ok(app.readRows_('CallShifts').filter((r) => !r.CalendarEventId).length === 2, 'left for the owner to sync');
+
+  gas.state.effective = 'volunteers@hfjvc.org';
+  app.dailyJob();
+  assert.ok(app.readRows_('CallShifts').every((r) => r.CalendarEventId));
 });

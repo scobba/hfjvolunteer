@@ -140,11 +140,12 @@ Upload** the CSV I provided. Choose **Replace current sheet**, and untick
   when TRUE the claim is refused.
 - **Admins** (Calendar page) see who has each day, assign or clear any day
   (past days too, for the record), and see each person's count against target.
-- **Google Calendar:** every claim becomes a 24-hour event on the *HFJ On Call*
-  calendar, owned by the account the app runs as, with the volunteer as a guest
-  so it lands on their own calendar. Releasing cancels it. Only that account
-  changes the calendar: "Run daily job now" from the Sheet menu runs as you and
-  skips the calendar sync rather than making a second calendar. If Google Calendar
+- **Google Calendar:** every claim becomes a 24-hour event on the call
+  calendar (an existing HFJ calendar shared with the app, or *HFJ On Call*,
+  which the app creates), with the volunteer as a guest
+  so it lands on their own calendar. Releasing cancels it. "Run daily job now"
+  from the Sheet menu runs as you: it skips the calendar sync if you can't edit
+  that calendar, and never makes a second one. If Google Calendar
   is down the claim still stands; the daily job (or *Sync missing events*)
   adds the event later. Event text is just "HFJ on call: Name".
 - **Emails:** the volunteer gets a reminder the day before (`SendOnCallReminders`);
@@ -165,16 +166,27 @@ Upload** the CSV I provided. Choose **Replace current sheet**, and untick
    `authorizeCalendar` in the function menu, click **Run**, and allow. Until
    this is done, claims still save but no events are created (they're added
    afterwards by *Sync missing events*).
-2. **Create the calendar:** in the dashboard, Calendar → **Create calendar**.
-   The web app always runs as volunteers@, so the calendar is theirs. (The
-   first claimed day would also create it.)
-3. **Share HFJ On Call with the admins** (as volunteers@): Google Calendar
-   → Settings → HFJ On Call → *Share with specific people* → each admin,
-   *See all event details*.
-4. **Import the current schedule:** from the account that owns today's call
-   calendar, share it with volunteers@hfjvc.org (*See all event details*).
-   Then in the dashboard, Calendar → *Import the current schedule*, paste its
-   calendar ID, preview, fix any rows, Import.
+2. **Choose the calendar** (dashboard → Calendar → Google Calendar):
+   - **An existing HFJ calendar:** share it with volunteers@hfjvc.org with
+     *Make changes to events*, then *Use an existing calendar* and paste its
+     calendar ID. The app checks it can add events there. Events already on it
+     stay as they are.
+   - **Or a new one:** *Create HFJ On Call*. The web app always runs as
+     volunteers@, so the calendar is theirs; share it with the admins from
+     Google Calendar as volunteers@. (The first claimed day also creates it
+     if nothing was chosen.)
+3. **Import the current schedule:** Calendar → *Import the current schedule*,
+   preview, fix any rows, Import.
+   - From the calendar chosen in step 2, importing **links** each existing event
+     to its volunteer: nothing is copied or changed, and releasing that day later
+     removes the event. (An all-day event covering several days stays until the
+     last of its days is released.)
+   - From any other calendar (shared with volunteers@, *See all event details*),
+     the days are **copied** onto the call calendar; the old calendar is left alone.
+
+The Sheet's CallShifts tab is the record; the calendar shows it. Events added
+or moved by hand in Google Calendar aren't read back into the app, so make
+changes through the dashboard or the volunteer's link.
 
 ## Setup (one time)
 
@@ -322,7 +334,7 @@ The script asks Google for only what it uses:
 | See, edit, create and delete **only the Drive files this app created** (`drive.file`) | Volunteer folders, uploads and signed PDFs. It can't see any other Drive content, including the HFJ EMR. |
 | Show menus in the Sheet | The *HFJ Volunteers* menu |
 | See your email address | The admin check |
-| See, edit, share and delete your calendars (`calendar`) | The *HFJ On Call* calendar, and reading the old call calendar to import it. It runs as volunteers@, which has no other calendars. |
+| See, edit, share and delete your calendars (`calendar`) | Adding call days to the call calendar, and reading a calendar to import it. It runs as volunteers@, so it reaches only calendars shared with that account. |
 
 **Nothing is ever shared publicly.** All Drive sharing goes through one
 guarded function (`assertAllowedShare` in `src/DriveStore.gs`). It allows
@@ -347,7 +359,7 @@ the old folder stays linked from each record.
 | SendOnCallReminders | TRUE | Email the volunteer the day before their call day |
 | CoverageAlerts | TRUE | Email admins about uncovered days |
 | CoverageAlertDays | 14 | How far ahead gaps are alerted |
-| CallCalendarId | (set automatically) | The HFJ On Call calendar |
+| CallCalendarId | (set from the Calendar page) | The Google Calendar call days go on |
 | SendDocumentUpdateEmails | TRUE | Ask for re-acknowledgment when a document gets a new Version |
 | DocumentUpdateReminderDays | 14 | Repeat interval for those emails |
 | BlockIneligibleClaims | FALSE | Warn only until backfill is done |

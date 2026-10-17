@@ -267,6 +267,8 @@ function api_calendar(month) {
   var view = adminMonth(readRows_(TABS.VOLUNTEERS), readRows_(TABS.CALL_SHIFTS), month, today);
   var id = String(getSettings_().CallCalendarId || '').trim();
   view.calendarId = id;
+  view.calendarName = '';
+  try { var cal = id && callCalendar_(); if (cal) view.calendarName = cal.getName(); } catch (e) { view.calendarName = ''; }
   view.calendarUrl = id ? 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(id) : '';
   view.startTime = shiftStartTime_();
   view.today = today;
@@ -292,6 +294,13 @@ function api_syncCalendar(month) {
   return api_calendar(month);
 }
 
+/** Uses an existing HFJ Google Calendar for call days instead of creating HFJ On Call. */
+function api_useCalendar(calendarId, month) {
+  var actor = requireAdmin_();
+  withLock_(function () { useCallCalendar_(calendarId, actor); });
+  return api_calendar(month);
+}
+
 /** Reads an existing call calendar and matches its events to volunteers, without saving anything. */
 function api_importPreview(calendarId, from, to) {
   requireAdmin_();
@@ -300,6 +309,8 @@ function api_importPreview(calendarId, from, to) {
   var events = readExternalCalendar_(calendarId, from, to);
   var volunteers = readRows_(TABS.VOLUNTEERS);
   return {
+    // Importing from the call calendar itself links its events rather than copying them.
+    linked: String(calendarId || '').trim() === String(getSettings_().CallCalendarId || '').trim(),
     rows: matchImportEvents(events, volunteers, activeShiftsByDate(readRows_(TABS.CALL_SHIFTS))),
     people: volunteers.filter(function (v) { return takesCall(v) && v.Status !== 'Departed'; })
       .map(function (v) { return { volunteerId: v.VolunteerID, name: v.Name }; })
@@ -307,14 +318,23 @@ function api_importPreview(calendarId, from, to) {
   };
 }
 
-/** Saves previewed rows [{ date, volunteerId }] as claims. invite: also add each volunteer as a guest. */
-function api_importShifts(rows, invite) {
+/**
+ * Saves previewed rows [{ date, volunteerId, eventId }] as claims. invite: also
+ * add each volunteer as a guest of new events. When calendarId is the call
+ * calendar itself, each row's existing event is linked (claimShift_ checks it's
+ * really on that calendar) instead of adding a copy.
+ */
+function api_importShifts(rows, invite, calendarId) {
   var actor = requireAdmin_();
+  var linked = !!calendarId && String(calendarId).trim() === String(getSettings_().CallCalendarId || '').trim();
   var result = { imported: 0, skipped: [] };
   (rows || []).slice(0, 400).forEach(function (r) {
     if (!r || !r.volunteerId) return;
     try {
-      withLock_(function () { claimShift_(String(r.volunteerId), String(r.date), actor, { byAdmin: true, source: 'import', invite: !!invite }); });
+      withLock_(function () {
+        claimShift_(String(r.volunteerId), String(r.date), actor,
+          { byAdmin: true, source: 'import', invite: !!invite, eventId: linked && r.eventId ? String(r.eventId) : '' });
+      });
       result.imported++;
     } catch (e) {
       result.skipped.push(r.date + ': ' + e.message);

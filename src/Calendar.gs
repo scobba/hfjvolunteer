@@ -160,7 +160,7 @@ function matchImportEvents(events, volunteers, byDate) {
     if (!hits.length) hits = people.filter(function (v) { return has(last(v)); });
     var taken = byDate[e.date];
     return {
-      date: e.date, title: e.title,
+      date: e.date, title: e.title, eventId: e.eventId || '',
       volunteerId: hits.length === 1 ? hits[0].VolunteerID : '',
       note: taken ? 'Already claimed in HFJ' : hits.length > 1 ? 'Matches more than one person' : hits.length ? '' : 'No name matched',
       skip: !!taken

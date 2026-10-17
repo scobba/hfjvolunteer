@@ -590,17 +590,23 @@
         return '<tr><td>' + vlink(p.volunteerId, p.name) + '</td><td>' + p.count + '</td><td>' +
           (p.target === '' || p.target === undefined ? '<span class="muted">—</span>' : esc(p.target) + (short ? ' <span class="chip warn">short</span>' : '')) + '</td></tr>';
       }).join('') + '</tbody></table>' : '<p class="muted">No active physicians, NPs or PAs yet.</p>') + '</div>';
+    var calName = c.calendarName || (c.calendarId ? 'the call calendar' : '');
     html += '<div class="card"><h2>Google Calendar</h2>' + (c.calendarId
-      ? '<p class="small">Claimed days go on the <b>HFJ On Call</b> calendar, and each volunteer is invited to their own days. ' +
-        link(c.calendarUrl, 'Open HFJ On Call') + '</p><p class="small muted">To see it in your own Google Calendar, sign in as the HFJ Volunteers account once and share the calendar with yourself (Settings → HFJ On Call → Share with specific people).</p>'
-      : '<p class="small">The HFJ On Call calendar is created the first time a day is claimed, or now:</p>') +
-      '<div class="actions"><button class="secondary" id="cgSync">' + (c.calendarId ? 'Sync missing events' : 'Create calendar') + '</button></div></div></div>';
+      ? '<p class="small">Claimed days go on <b>' + esc(calName) + '</b>, and each volunteer is invited to their own days. ' +
+        link(c.calendarUrl, 'Open it') + '</p>' + (c.calendarName ? '' : '<p class="small bad">The app can\'t open this calendar. Share it with the HFJ Volunteers account with <i>Make changes to events</i>.</p>')
+      : '<p class="small">Choose where claimed days go: an existing HFJ calendar, or a new <b>HFJ On Call</b> calendar.</p>') +
+      '<div class="actions"><button class="secondary" id="cgSync">' + (c.calendarId ? 'Sync missing events' : 'Create HFJ On Call') + '</button></div>' +
+      '<details style="margin-top:10px"' + (c.calendarId ? '' : ' open') + '><summary class="small">Use an existing calendar' + (c.calendarId ? ' instead' : '') + '</summary>' +
+      '<p class="small muted">Share it with the HFJ Volunteers account with <i>Make changes to events</i>, then paste its calendar ID (Google Calendar → Settings → that calendar → <i>Integrate calendar</i>). ' +
+      'Events already on it stay; import them below to link them to volunteers.</p>' +
+      '<form id="useCal" class="actions"><input name="calendarId" required placeholder="…@group.calendar.google.com" style="flex:1;min-width:220px">' +
+      '<button type="submit" class="secondary">Use this calendar</button></form></details></div></div>';
 
     html += '<div class="card" style="margin-top:14px"><h2>Import the current schedule</h2>' +
       '<p class="small">Bring in days from the calendar HFJ uses today. First share that calendar with the HFJ Volunteers account ' +
       '(<i>See all event details</i>), then paste its calendar ID (Google Calendar → Settings → that calendar → <i>Integrate calendar</i>). ' +
       'Nothing is saved until you check the preview and click Import.</p>' +
-      '<form id="impForm"><div class="row"><label>Calendar ID<input name="calendarId" required placeholder="…@group.calendar.google.com"></label>' +
+      '<form id="impForm"><div class="row"><label>Calendar ID<input name="calendarId" required value="' + esc(c.calendarId) + '" placeholder="…@group.calendar.google.com"></label>' +
       '<label>From<input name="from" type="date" required value="' + esc(c.today) + '"></label>' +
       '<label>To<input name="to" type="date" required value="' + esc(addDaysIso(c.today, 180)) + '"></label></div>' +
       '<div class="actions"><button type="submit" class="secondary">Preview</button></div></form><div id="impHost"></div></div>';
@@ -609,6 +615,17 @@
     document.getElementById('cgPrev').onclick = function () { calMonth = CallGrid.shift(c.month, -1); calSel = ''; renderCalendar(); };
     document.getElementById('cgNext').onclick = function () { calMonth = CallGrid.shift(c.month, 1); calSel = ''; renderCalendar(); };
     document.getElementById('cgToday').onclick = function () { calMonth = ''; calSel = ''; renderCalendar(); };
+    document.getElementById('useCal').onsubmit = function (e) {
+      e.preventDefault();
+      var btn = e.target.querySelector('button'), id = e.target.calendarId.value;
+      btn.disabled = true;
+      call('api_useCalendar', id, c.month).then(function (n) {
+        toast('Call days now go on ' + (n.calendarName || 'that calendar'));
+        drawCalendar(n);
+        var f = document.querySelector('#impForm input[name=calendarId]');
+        if (f) f.value = id;
+      }).catch(function (err) { btn.disabled = false; fail(err); });
+    };
     document.getElementById('cgSync').onclick = function (e) {
       e.target.disabled = true;
       call('api_syncCalendar', c.month).then(function (n) { toast('Calendar up to date'); drawCalendar(n); }).catch(function (err) { e.target.disabled = false; fail(err); });
@@ -623,7 +640,7 @@
       e.preventDefault();
       var f = formData(e.target), btn = e.target.querySelector('button');
       btn.disabled = true;
-      call('api_importPreview', f.calendarId, f.from, f.to).then(function (p) { btn.disabled = false; importPreview(p); })
+      call('api_importPreview', f.calendarId, f.from, f.to).then(function (p) { btn.disabled = false; p.calendarId = f.calendarId; importPreview(p); })
         .catch(function (err) { btn.disabled = false; fail(err); });
     };
   }
@@ -667,14 +684,19 @@
           (r.skip ? '<span class="muted">—</span>' : '<select data-imp="' + i + '">' + options(people, r.volunteerId, 'Skip') + '</select>') +
           '</td><td class="small muted">' + esc(r.note) + '</td></tr>';
       }).join('') + '</tbody></table></div>' +
-      '<div class="actions"><label class="check"><input type="checkbox" id="impInvite"> Also send each volunteer a calendar invitation for their imported days</label></div>' +
+      (p.linked ? '<p class="small">These events are already on the call calendar, so importing links each one to its volunteer. Nothing is copied or changed on the calendar, and no invitations are sent.</p>'
+        : '<div class="actions"><label class="check"><input type="checkbox" id="impInvite"> Also send each volunteer a calendar invitation for their imported days</label></div>') +
       '<div class="actions"><button id="impGo">Import</button><span class="small muted">Rows set to Skip aren\'t imported.</span></div>';
     document.getElementById('impGo').onclick = function (e) {
       var rows = [];
-      host.querySelectorAll('[data-imp]').forEach(function (s) { if (s.value) rows.push({ date: p.rows[+s.dataset.imp].date, volunteerId: s.value }); });
+      host.querySelectorAll('[data-imp]').forEach(function (s) {
+        var r = p.rows[+s.dataset.imp];
+        if (s.value) rows.push({ date: r.date, volunteerId: s.value, eventId: r.eventId });
+      });
       if (!rows.length) return fail(new Error('Nothing to import.'));
       e.target.disabled = true;
-      call('api_importShifts', rows, document.getElementById('impInvite').checked).then(function (res) {
+      var inv = document.getElementById('impInvite');
+      call('api_importShifts', rows, !!(inv && inv.checked), p.calendarId).then(function (res) {
         toast(res.imported + ' day' + (res.imported === 1 ? '' : 's') + ' imported');
         host.innerHTML = res.skipped.length ? '<div class="banner">Not imported:<ul>' + res.skipped.map(function (s) { return '<li>' + esc(s) + '</li>'; }).join('') + '</ul></div>' : '';
         call('api_calendar', calMonth).then(function (c) { var keep = host.innerHTML; drawCalendar(c); document.getElementById('impHost').innerHTML = keep; });
