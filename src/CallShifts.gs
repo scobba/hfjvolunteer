@@ -30,31 +30,49 @@ function setSetting_(key, value) {
   else appendRow_(TABS.SETTINGS, { Key: key, Value: value, Notes: '' });
 }
 
-/** The HFJ On Call calendar, created on first use by whoever the app runs as. */
-function ensureCallCalendar_() {
+/**
+ * The HFJ On Call calendar if this account owns it, else null. Run from the
+ * Sheet menu, the daily job runs as the admin who clicked, who doesn't own it.
+ */
+function callCalendar_() {
   var id = String(getSettings_().CallCalendarId || '').trim();
   var cal = id ? CalendarApp.getCalendarById(id) : null;
+  return cal && cal.isOwnedByMe() ? cal : null;
+}
+
+/**
+ * The HFJ On Call calendar, created on first use. Only the web app (which
+ * always runs as volunteers@) creates it; once it exists, another account
+ * gets an error rather than a second calendar.
+ */
+function ensureCallCalendar_() {
+  var cal = callCalendar_();
   if (cal) return cal;
+  var id = String(getSettings_().CallCalendarId || '').trim();
+  if (id) throw new Error('The HFJ On Call calendar belongs to another account. Calendar changes are made by the HFJ Volunteers account.');
   cal = CalendarApp.createCalendar(CALL_CALENDAR_NAME, {
     timeZone: getSpreadsheet_().getSpreadsheetTimeZone(),
     summary: 'Healthcare for Justice call schedule. Managed by the HFJ Volunteers app; changes made here are overwritten.'
   });
   setSetting_('CallCalendarId', cal.getId());
-  logAudit_('system', 'calendar.create', 'Calendar', cal.getId(), CALL_CALENDAR_NAME + (id ? ' (the saved one was not reachable)' : ''));
+  logAudit_('system', 'calendar.create', 'Calendar', cal.getId(), CALL_CALENDAR_NAME);
   return cal;
 }
 
 /**
  * Run once from the Apps Script editor, signed in as the account the web app
- * runs as, to approve the calendar permission and create the calendar.
+ * runs as (volunteers@), to approve the calendar permission. It only reads, so
+ * running it as anyone else can't create a calendar under the wrong account;
+ * the web app creates HFJ On Call on the first claim or from the Calendar page.
  */
 function authorizeCalendar() {
-  // Through a web page this runs as volunteers@ for a visitor; only its owner, in the editor, may run it.
+  // Callable from the portal page, where it runs as volunteers@ for a visitor; only the account itself may run it.
   var me = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
   if (!me || currentEmail_() !== me) throw new Error('Run authorizeCalendar from the Apps Script editor.');
-  var cal = ensureCallCalendar_();
-  Logger.log('HFJ On Call calendar: ' + cal.getId());
-  return cal.getId();
+  var cal = callCalendar_();
+  var msg = cal ? 'HFJ On Call calendar: ' + cal.getId() : 'Calendar access approved for ' + me + '.';
+  Logger.log(msg);
+  return msg;
 }
 
 /** Adds the event for a claim and stores its id. Never throws: the claim stands either way. */
@@ -141,8 +159,9 @@ function releaseShift_(volunteerId, date, actor, byAdmin) {
   }
 }
 
-/** Adds calendar events for upcoming claims that don't have one (a failed sync). */
+/** Adds calendar events for upcoming claims that don't have one (a failed sync). Skipped by an account that doesn't own the calendar. */
 function syncMissingEvents_() {
+  if (!callCalendar_()) return 0;
   var today = today_();
   var volunteers = {};
   readRows_(TABS.VOLUNTEERS).forEach(function (v) { volunteers[v.VolunteerID] = v; });

@@ -21,6 +21,23 @@ function requireAdmin_() {
   return { email: email, name: admin.Name || email };
 }
 
+/**
+ * For jobs that are also run by hand: the daily trigger itself, the account
+ * the app runs as (in the editor), or an admin (Sheet menu). Every top-level
+ * function without a trailing _ can be called from the public portal page, so
+ * these must check. A trigger is recognised by its uid, checked against the
+ * project's real triggers so a caller can't just claim to be one.
+ */
+function requireJobCaller_(e) {
+  if (e && e.triggerUid) {
+    var uid = String(e.triggerUid);
+    if (ScriptApp.getProjectTriggers().some(function (t) { return t.getUniqueId() === uid; })) return { email: 'system', name: 'Daily job' };
+  }
+  var me = currentEmail_();
+  if (me && me === String(Session.getEffectiveUser().getEmail() || '').toLowerCase()) return { email: me, name: me };
+  return requireAdmin_();
+}
+
 function adminEmails_() {
   return readRows_(TABS.ADMINS)
     .filter(function (a) { return a.Active && a.Email; })

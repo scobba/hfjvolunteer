@@ -2,7 +2,8 @@
  * Daily time-driven job (installed by installTriggers): refresh computed
  * statuses, then send due reminders. Runs as the account that installed it.
  */
-function dailyJob() {
+function dailyJob(e) {
+  requireJobCaller_(e);
   var actor = { email: 'system', name: 'Daily job' };
   var today = today_();
   var policy = policy_();

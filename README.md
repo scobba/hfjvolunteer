@@ -142,7 +142,9 @@ Upload** the CSV I provided. Choose **Replace current sheet**, and untick
   (past days too, for the record), and see each person's count against target.
 - **Google Calendar:** every claim becomes a 24-hour event on the *HFJ On Call*
   calendar, owned by the account the app runs as, with the volunteer as a guest
-  so it lands on their own calendar. Releasing cancels it. If Google Calendar
+  so it lands on their own calendar. Releasing cancels it. Only that account
+  changes the calendar: "Run daily job now" from the Sheet menu runs as you and
+  skips the calendar sync rather than making a second calendar. If Google Calendar
   is down the claim still stands; the daily job (or *Sync missing events*)
   adds the event later. Event text is just "HFJ on call: Name".
 - **Emails:** the volunteer gets a reminder the day before (`SendOnCallReminders`);
@@ -160,13 +162,16 @@ Upload** the CSV I provided. Choose **Replace current sheet**, and untick
 
 1. **Approve the calendar permission as volunteers@.** Signed in as
    volunteers@hfjvc.org, open the Sheet → **Extensions → Apps Script**, choose
-   `authorizeCalendar` in the function menu, click **Run**, and allow. This
-   creates the *HFJ On Call* calendar. Until this is done, claims still save
-   but no events are created (they're added afterwards by *Sync missing events*).
-2. **Share HFJ On Call with the admins** (still as volunteers@): Google Calendar
+   `authorizeCalendar` in the function menu, click **Run**, and allow. Until
+   this is done, claims still save but no events are created (they're added
+   afterwards by *Sync missing events*).
+2. **Create the calendar:** in the dashboard, Calendar → **Create calendar**.
+   The web app always runs as volunteers@, so the calendar is theirs. (The
+   first claimed day would also create it.)
+3. **Share HFJ On Call with the admins** (as volunteers@): Google Calendar
    → Settings → HFJ On Call → *Share with specific people* → each admin,
    *See all event details*.
-3. **Import the current schedule:** from the account that owns today's call
+4. **Import the current schedule:** from the account that owns today's call
    calendar, share it with volunteers@hfjvc.org (*See all event details*).
    Then in the dashboard, Calendar → *Import the current schedule*, paste its
    calendar ID, preview, fix any rows, Import.

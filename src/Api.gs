@@ -287,7 +287,7 @@ function api_unassignShift(date, month) {
 
 /** Creates the HFJ On Call calendar if needed and adds any events that failed to sync. */
 function api_syncCalendar(month) {
-  requireAdmin_();
+  requireAdmin_(); // runs as volunteers@, so this is where the calendar is first created
   withLock_(function () { ensureCallCalendar_(); syncMissingEvents_(); });
   return api_calendar(month);
 }

@@ -235,12 +235,33 @@ test('the dashboard coverage block goes live with the calendar', () => {
   assert.equal(c.gaps.length, 13);
 });
 
-test('authorizeCalendar runs only for the account itself, in the editor', () => {
+test('authorizeCalendar runs only for the account itself, and never creates a calendar', () => {
   const ctx = setup();
   const { app, gas } = ctx;
   assert.throws(() => app.authorizeCalendar(), /editor/, 'an admin (or a portal visitor) calling it is refused');
   gas.state.user = 'volunteers@hfjvc.org';
-  const id = app.authorizeCalendar();
-  assert.equal(app.getSettings_().CallCalendarId, id);
-  assert.equal(app.authorizeCalendar(), id, 'idempotent');
+  assert.match(app.authorizeCalendar(), /approved for volunteers@hfjvc.org/);
+  assert.equal(Object.keys(gas.calendars).length, 0);
+  gas.state.user = 'anthony@hfjvc.org';
+  const id = app.api_createVolunteer({ Name: 'Ann Lee', Email: 'ann@example.com', Credential: 'MD', Status: 'Active' });
+  app.api_assignShift('2026-10-20', id, '2026-10');
+  gas.state.user = 'volunteers@hfjvc.org';
+  assert.match(app.authorizeCalendar(), /HFJ On Call calendar: cal1/);
+});
+
+test('run as an admin from the Sheet menu, the daily job leaves the calendar alone', () => {
+  const ctx = setup();
+  const { app, gas } = ctx;
+  const id = app.api_createVolunteer({ Name: 'Ann Lee', Email: 'ann@example.com', Credential: 'MD', Status: 'Active' });
+  app.api_assignShift('2026-10-20', id, '2026-10'); // web app: runs as volunteers@, creates HFJ On Call
+  const hfj = hfjCal(gas);
+  hfj.createEvent = () => { throw new Error('down'); };
+  app.api_assignShift('2026-10-21', id, '2026-10');
+  const calId = app.getSettings_().CallCalendarId;
+  gas.state.effective = 'anthony@hfjvc.org'; // menu run: the script runs as the admin who clicked
+  app.dailyJob();
+  assert.equal(Object.keys(gas.calendars).length, 1, 'no second calendar');
+  assert.equal(app.getSettings_().CallCalendarId, calId);
+  assert.equal(app.readRows_('CallShifts').pop().CalendarEventId, '', 'left for the owner to sync');
+  assert.throws(() => app.ensureCallCalendar_(), /belongs to another account/);
 });

@@ -87,13 +87,14 @@ export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {
   let fileSeq = 0;
   const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
   const blob = (bytes, mime) => ({ bytes, mime, name: '', setName(n) { this.name = n; return this; } });
-  const state = { user, effective: 'volunteers@hfjvc.org', now: null };
+  const state = { user, effective: 'volunteers@hfjvc.org', triggers: [] };
   // Google Calendar: calendars by id, each with its events. `external` holds calendars shared with the account.
   const calendars = {};
   let calSeq = 0, evSeq = 0;
   const makeCalendar = (id, name) => {
-    const cal = { id, name, events: [],
+    const cal = { id, name, events: [], owner: state.effective,
       getId: () => id,
+      isOwnedByMe: () => cal.owner === state.effective,
       createEvent(title, start, end, opts = {}) {
         const ev = { id: 'ev' + ++evSeq, title, start, end, opts, deleted: false,
           getId() { return this.id; }, getTitle() { return this.title; }, isAllDayEvent: () => false,
@@ -157,7 +158,10 @@ export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {
         Permissions: { create: (p, fileId) => { permissions.push(Object.assign({ fileId }, p)); return {}; } },
       },
       MailApp: { sendEmail: (m) => sent.push(m) },
-      ScriptApp: { getService: () => ({ getUrl: () => 'https://script.google.com/a/macros/hfjvc.org/s/x/exec' }) },
+      ScriptApp: {
+        getService: () => ({ getUrl: () => 'https://script.google.com/a/macros/hfjvc.org/s/x/exec' }),
+        getProjectTriggers: () => state.triggers.map((uid) => ({ getUniqueId: () => uid, getHandlerFunction: () => 'dailyJob' })),
+      },
     },
   };
 }
