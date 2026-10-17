@@ -7,7 +7,7 @@ Google Sheet; deployed with clasp from `src/`. No PHI in this system.
   declarations at top level; private server functions end in `_`;
   functions the page calls are `api_*` in `Api.gs` and must call `requireAdmin_()`.
 - Pure logic (no Apps Script services) lives in `Dates`, `Config`, `Matrix`,
-  `Eligibility`, `Dashboard`, `Reminders`, `Documents`, `Render`, `Uploads`,
+  `Eligibility`, `Dashboard`, `Reminders`, `Calendar`, `Documents`, `Render`, `Uploads`,
   `Onboarding`, `parseInviteList` and the parse half of `Migration`.
   Keep it that way so it stays testable.
 - Volunteer-facing calls are `portal_*` / `supervisor_*` in `Portal.gs`: they take

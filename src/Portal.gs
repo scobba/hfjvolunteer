@@ -62,7 +62,9 @@ function portalState_(v) {
       if (/^https:\/\//.test(CREDENTIAL_TYPES[t].lookupUrl)) m[t] = { board: CREDENTIAL_TYPES[t].board, url: CREDENTIAL_TYPES[t].lookupUrl };
       return m;
     }, {}),
-    done: volunteerPartComplete(tasks)
+    done: volunteerPartComplete(tasks),
+    // Physicians, NPs and PAs get the call calendar once they're Active.
+    calendar: takesCall(v) ? { open: v.Status === 'Active', startTime: shiftStartTime_() } : null
   };
 }
 
@@ -149,6 +151,54 @@ function notifyVolunteerPartDone_(v, tasks) {
     .map(function (t) { return '- ' + t.title + (t.note ? ' (' + t.note + ')' : ''); });
   notifyAdmins_(v.Name + ' finished their part of onboarding',
     [v.Name + ' (' + v.VolunteerID + ') has completed everything they can do. Still open:'].concat(open));
+}
+
+// ---------------------------------------------------------------- call calendar
+
+/** One month of the volunteer's calendar view, plus anything missing for eligibility. */
+function portalCalendar_(v, month) {
+  var p = policy_();
+  var today = today_();
+  if (!isMonth(month)) month = today.slice(0, 7);
+  var view = portalMonth(v, readRows_(TABS.CALL_SHIFTS), month, { today: today, horizonDays: p.calendarHorizonDays });
+  var reqs = readRows_(TABS.REQUIREMENTS).filter(function (r) { return r.VolunteerID === v.VolunteerID; });
+  var creds = readRows_(TABS.CREDENTIALS).filter(function (c) { return c.VolunteerID === v.VolunteerID; });
+  var e = evaluateEligibility(v, reqs, creds, today, { bgIntervalMonths: p.bgIntervalMonths });
+  view.today = today;
+  view.startTime = shiftStartTime_();
+  view.eligible = e.eligible;
+  view.blocked = !e.eligible && p.blockIneligibleClaims;
+  return view;
+}
+
+function portalCallVolunteer_(token, action) {
+  var v = action ? portalVolunteer_(token, action) : volunteerByToken_(token);
+  if (!v) throw new Error('This link is no longer valid. Please ask HFJ for a new one.');
+  if (!takesCall(v)) throw new Error('Only physicians, NPs and PAs take HFJ call.');
+  return v;
+}
+
+/** Read-only, so not written to the AuditLog on every month the volunteer flips through. */
+function portal_calendar(token, month) {
+  return portalCalendar_(portalCallVolunteer_(token, ''), String(month || ''));
+}
+
+function portal_claim(token, date, month) {
+  return withLock_(function () {
+    var v = portalCallVolunteer_(token, 'claim');
+    var res = claimShift_(v.VolunteerID, String(date), volunteerActor_(v), { source: 'portal', invite: true });
+    var view = portalCalendar_(findRow_(TABS.VOLUNTEERS, 'VolunteerID', v.VolunteerID), String(month || ''));
+    view.warning = res.warning;
+    return view;
+  });
+}
+
+function portal_release(token, date, month) {
+  return withLock_(function () {
+    var v = portalCallVolunteer_(token, 'release');
+    releaseShift_(v.VolunteerID, String(date), volunteerActor_(v), false);
+    return portalCalendar_(v, String(month || ''));
+  });
 }
 
 // ---------------------------------------------------------------- supervisor page

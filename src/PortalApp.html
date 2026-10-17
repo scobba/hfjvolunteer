@@ -49,8 +49,15 @@
       html += '<div class="card" style="border-color:var(--sage);border-left:4px solid var(--sage)"><h2>You\'re all set for now</h2><p>Thank you! Everything you can do is done. ' +
         'HFJ will finish the remaining steps and contact you if anything else is needed.</p></div>';
     }
-    html += '<div class="card"><h2>Your steps</h2><div>' + tasks.map(taskRow).join('') + '</div></div>';
+    var calCard = state.calendar ? '<div class="card" id="callcard">' + (state.calendar.open ? '<p class="muted">Loading the call calendar…</p>'
+      : '<h2>Call calendar</h2><p class="muted">You\'ll be able to claim call days here once HFJ has activated you.</p>') + '</div>' : '';
+    var steps = '<div class="card"><h2>Your steps</h2><div>' + tasks.map(taskRow).join('') + '</div></div>';
+    // Active physicians, NPs and PAs mostly come back for the calendar, so it goes first.
+    html += state.calendar && state.calendar.open ? calCard + steps : steps + calCard;
     app.innerHTML = html;
+    if (state.calendar && state.calendar.open) {
+      if (calView) drawCalendar(); else loadCalendar(calMonth);
+    }
     tasks.forEach(function (t) {
       var b = app.querySelector('[data-open="' + t.key + '"]');
       if (b) b.onclick = function () { openKey = openKey === t.key ? null : t.key; render(); };
@@ -197,6 +204,69 @@
   }
 
   // ---------------------------------------------------------------- supervisor
+
+  // ---------------------------------------------------------------- call calendar
+
+  var calView = null, calMonth = '';
+
+  /** "17:00" → "5:00 pm" */
+  function clock(t) {
+    var p = String(t || '17:00').split(':'), h = +p[0];
+    return (h % 12 || 12) + ':' + p[1] + (h < 12 ? ' am' : ' pm');
+  }
+
+  function loadCalendar(month) {
+    call('portal_calendar', PORTAL_TOKEN, month || '').then(function (v) { calView = v; calMonth = v.month; drawCalendar(); }).catch(fail);
+  }
+
+  function drawCalendar() {
+    var host = document.getElementById('callcard');
+    if (!host || !calView) return;
+    var v = calView;
+    var target = v.target === '' ? '' : ' of the ' + esc(v.target) + ' you\'d like';
+    var html = '<h2>Call calendar</h2><p class="small">Each call day runs 24 hours from ' + esc(clock(v.startTime)) +
+      '. Tap an <b>open</b> day to take it, or one of <b>your</b> days to give it up. Days you take are added to your calendar.</p>';
+    if (v.blocked) {
+      html += '<div class="banner">You can\'t claim call days until HFJ has finished your file. Your steps show anything you can do, or contact HFJ.</div>';
+    } else if (!v.eligible) {
+      html += '<p class="small muted">HFJ is still completing your file. You can claim days in the meantime.</p>';
+    }
+    html += '<div class="cg-nav"><button class="secondary small-btn" id="cgPrev" aria-label="Previous month">‹</button><h2>' +
+      esc(CallGrid.label(v.month)) + '</h2><button class="secondary small-btn" id="cgNext" aria-label="Next month">›</button></div>';
+    html += CallGrid.grid(v.days, function (d) {
+      var tag = { open: 'Open', mine: 'You', taken: 'Taken' }[d.status] || '';
+      var clickable = (d.status === 'open' && !v.blocked) || d.status === 'mine';
+      return { cls: d.status === 'open' && v.blocked ? 'later' : d.status, html: tag ? '<span class="cg-tag">' + tag + '</span>' : '',
+        attrs: clickable ? 'data-day="' + d.date + '" data-st="' + d.status + '" tabindex="0" role="button"' : '' };
+    });
+    html += '<div class="cg-legend"><span style="--sw:#fff8e6">Open</span><span style="--sw:var(--ok-bg)">Yours</span><span style="--sw:var(--sky-soft)">Taken</span></div>';
+    html += '<p class="small" style="margin-top:10px"><b>' + v.count + '</b> day' + (v.count === 1 ? '' : 's') + ' in ' + esc(CallGrid.label(v.month)) + target + '.' +
+      (v.upcoming.length ? ' Your upcoming days: ' + v.upcoming.map(function (d) { return esc(CallGrid.pretty(d)); }).join(' · ') : '') + '</p>';
+    host.innerHTML = html;
+    document.getElementById('cgPrev').onclick = function () { loadCalendar(CallGrid.shift(v.month, -1)); };
+    document.getElementById('cgNext').onclick = function () { loadCalendar(CallGrid.shift(v.month, 1)); };
+    host.querySelectorAll('[data-day]').forEach(function (el) {
+      var act = function () { dayAction(el.dataset.day, el.dataset.st); };
+      el.onclick = act;
+      el.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } };
+    });
+  }
+
+  function dayAction(date, status) {
+    var when = CallGrid.pretty(date) + ' from ' + clock(calView.startTime) + ' for 24 hours';
+    if (status === 'open') {
+      if (!confirm('Take HFJ call on ' + when + '?')) return;
+      call('portal_claim', PORTAL_TOKEN, date, calMonth).then(function (v) {
+        calView = v; drawCalendar();
+        toast(v.warning ? 'Saved. HFJ will follow up on what\'s still missing.' : 'You\'re on call ' + CallGrid.pretty(date) + '. Check your email for the calendar invitation.');
+      }).catch(function (err) { fail(err); loadCalendar(calMonth); });
+    } else if (status === 'mine') {
+      if (!confirm('Give up your call day on ' + when + '? It will be open for someone else to take.')) return;
+      call('portal_release', PORTAL_TOKEN, date, calMonth).then(function (v) {
+        calView = v; drawCalendar(); toast('Released ' + CallGrid.pretty(date));
+      }).catch(function (err) { fail(err); loadCalendar(calMonth); });
+    }
+  }
 
   function loadSupervisor() {
     call('supervisor_bootstrap', PORTAL_TOKEN).then(function (d) {

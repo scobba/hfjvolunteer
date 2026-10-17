@@ -32,7 +32,11 @@ function policy_() {
     sendUpdateRequests: settingBool_(s, 'SendDocumentUpdateEmails'),
     updateReminderDays: settingInt_(s, 'DocumentUpdateReminderDays', 14),
     blockIneligibleClaims: settingBool_(s, 'BlockIneligibleClaims'),
-    calendarHorizonDays: settingInt_(s, 'CalendarHorizonDays', 180)
+    calendarHorizonDays: settingInt_(s, 'CalendarHorizonDays', 180),
+    lateReleaseDays: settingInt_(s, 'LateReleaseDays', 7),
+    onCallReminders: settingBool_(s, 'SendOnCallReminders'),
+    gapAlerts: settingBool_(s, 'CoverageAlerts'),
+    gapDays: settingInt_(s, 'CoverageAlertDays', 14)
   };
 }
 

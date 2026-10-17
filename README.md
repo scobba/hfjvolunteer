@@ -10,8 +10,8 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
 | Phase | Scope | State |
 |---|---|---|
 | 1 | Roster, credentials, requirement matrix, eligibility, reminders, admin dashboard, migration | Done |
-| 2 | Onboarding: invite → personal link → upload + e-signature → Drive | **This build** |
-| 3 | Call calendar: month grid, claim/release, Google Calendar sync, gap alerts | Later |
+| 2 | Onboarding: invite → personal link → upload + e-signature → Drive | Done |
+| 3 | Call calendar: month grid, claim/release, Google Calendar sync, gap alerts | **This build** |
 
 ## What Phase 1 does
 
@@ -35,7 +35,7 @@ Google Apps Script + Google Sheets. **No PHI**, only volunteer data.
   of an RN license, an NP certificate and an NP furnishing number (HFJ NPs prescribe).
 - **Dashboard** shows five blocks: Needs your review, Expiring soon (30/60 days),
   Expired / not eligible, Onboarding in progress, and Coverage gaps (live once
-  the Phase 3 calendar has data).
+  the call calendar has data).
 - **Daily job** refreshes the calculated statuses and sends reminders: 60
   days before a credential expires, then every 30 days while it's expired,
   and 30 days before the annual attestation is due. Each reminder is sent
@@ -124,6 +124,52 @@ the dashboard previews each one.
 To load the starting text: open the Documents tab, then **File → Import →
 Upload** the CSV I provided. Choose **Replace current sheet**, and untick
 **Convert text to numbers, dates, and formulas**.
+
+## What Phase 3 adds: the call calendar
+
+- **Who:** physicians, NPs and PAs (`CALL_GROUPS` in `src/Calendar.gs`) who
+  are Active. One person per day; a day runs 24 hours from `ShiftStartTime`
+  (17:00). Behavioral health, RN and CNA volunteers don't see the calendar.
+- **Volunteers** claim and release days from their personal link: a month
+  grid with open days highlighted, their own days, and their count against
+  `CallTargetPerMonth`. Other volunteers' days show only as *Taken*. Claims
+  open `CalendarHorizonDays` (180) ahead. A day can be claimed until its shift
+  starts, and released until then too.
+- **Eligibility** is checked for the shift date. While `BlockIneligibleClaims`
+  is FALSE the claim stands and admins get an email saying what's missing;
+  when TRUE the claim is refused.
+- **Admins** (Calendar page) see who has each day, assign or clear any day
+  (past days too, for the record), and see each person's count against target.
+- **Google Calendar:** every claim becomes a 24-hour event on the *HFJ On Call*
+  calendar, owned by the account the app runs as, with the volunteer as a guest
+  so it lands on their own calendar. Releasing cancels it. If Google Calendar
+  is down the claim still stands; the daily job (or *Sync missing events*)
+  adds the event later. Event text is just "HFJ on call: Name".
+- **Emails:** the volunteer gets a reminder the day before (`SendOnCallReminders`);
+  admins hear at once when someone releases a day within `LateReleaseDays` (7),
+  and the daily job emails uncovered days in the next `CoverageAlertDays` (14),
+  each date once.
+- **Import:** the Calendar page reads the calendar HFJ uses today (shared
+  with the app's account), matches names in event titles to volunteers, and
+  shows a preview to correct before anything is saved. Imported days don't
+  send invitations unless you tick the box.
+- `CallShifts` keeps one row per claim; a release stamps `ReleasedAt`, so the
+  history stays.
+
+### Turning the calendar on (one time)
+
+1. **Approve the calendar permission as volunteers@.** Signed in as
+   volunteers@hfjvc.org, open the Sheet → **Extensions → Apps Script**, choose
+   `authorizeCalendar` in the function menu, click **Run**, and allow. This
+   creates the *HFJ On Call* calendar. Until this is done, claims still save
+   but no events are created (they're added afterwards by *Sync missing events*).
+2. **Share HFJ On Call with the admins** (still as volunteers@): Google Calendar
+   → Settings → HFJ On Call → *Share with specific people* → each admin,
+   *See all event details*.
+3. **Import the current schedule:** from the account that owns today's call
+   calendar, share it with volunteers@hfjvc.org (*See all event details*).
+   Then in the dashboard, Calendar → *Import the current schedule*, paste its
+   calendar ID, preview, fix any rows, Import.
 
 ## Setup (one time)
 
@@ -250,8 +296,8 @@ That's expected:
    look each one up on the board site, mark it verified, and record the
    attestation date if you have one.
 2. When the *Expired / not eligible* block shows only real problems, set
-   `Settings → BlockIneligibleClaims` to `TRUE` (this matters once the Phase 3
-   calendar exists).
+   `Settings → BlockIneligibleClaims` to `TRUE`. Ineligible volunteers can then
+   no longer claim call days.
 3. Set `SendVolunteerReminders` to `TRUE`. Until then, reminders go only to
    the admins, so volunteers aren't emailed about gaps that are really just
    unfinished backfill.
@@ -271,6 +317,7 @@ The script asks Google for only what it uses:
 | See, edit, create and delete **only the Drive files this app created** (`drive.file`) | Volunteer folders, uploads and signed PDFs. It can't see any other Drive content, including the HFJ EMR. |
 | Show menus in the Sheet | The *HFJ Volunteers* menu |
 | See your email address | The admin check |
+| See, edit, share and delete your calendars (`calendar`) | The *HFJ On Call* calendar, and reading the old call calendar to import it. It runs as volunteers@, which has no other calendars. |
 
 **Nothing is ever shared publicly.** All Drive sharing goes through one
 guarded function (`assertAllowedShare` in `src/DriveStore.gs`). It allows
@@ -289,7 +336,15 @@ the old folder stays linked from each record.
 | Key | Default | Meaning |
 |---|---|---|
 | BackgroundCheckIntervalMonths | blank | Blank = background checks don't recur |
-| CalendarHorizonDays | 180 | Phase 3 |
+| CalendarHorizonDays | 180 | How far ahead call days can be claimed |
+| ShiftStartTime | 17:00 | When each 24-hour call day starts |
+| LateReleaseDays | 7 | Releasing this close to the day emails admins at once |
+| SendOnCallReminders | TRUE | Email the volunteer the day before their call day |
+| CoverageAlerts | TRUE | Email admins about uncovered days |
+| CoverageAlertDays | 14 | How far ahead gaps are alerted |
+| CallCalendarId | (set automatically) | The HFJ On Call calendar |
+| SendDocumentUpdateEmails | TRUE | Ask for re-acknowledgment when a document gets a new Version |
+| DocumentUpdateReminderDays | 14 | Repeat interval for those emails |
 | BlockIneligibleClaims | FALSE | Warn only until backfill is done |
 | ReminderLeadDays | 60 | First expiry reminder |
 | OverdueReminderIntervalDays | 30 | Repeat interval while expired |
@@ -317,8 +372,10 @@ These are judgment calls. Each is easy to change.
 - **Board lookup links** point to the DCA License Search
   (`search.dca.ca.gov`) for the DCA boards, and to CDPH for CNAs. They're in
   `CREDENTIAL_TYPES` in `src/Config.gs`, so check them before go-live.
-- **Call reminders** (on call tomorrow, coverage gaps) come with the Phase 3
-  calendar.
+- **On-call reminder** goes the day before (spec: "on call tomorrow"); the
+  calendar invitation's own reminders cover the day itself.
+- **Coverage alerts** list each uncovered date once, rather than every day,
+  so the daily email doesn't repeat itself.
 - I didn't have the HFJ EHR code to copy from. The domain-plus-allowlist
   sign-in and the AuditLog columns follow the spec's description, so line
   them up with the EHR if it does things differently.

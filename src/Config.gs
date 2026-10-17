@@ -43,9 +43,11 @@ var SCHEMAS = {
     ['CompletedBy', 'text'], ['DocumentUrl', 'text'], ['Detail', 'text'], ['Notes', 'text'],
     ['UpdatedAt', 'datetime'], ['UpdatedBy', 'text']
   ],
+  // One row per claim. A release stamps ReleasedAt, so the history stays.
   CallShifts: [
     ['ShiftDate', 'date'], ['VolunteerID', 'text'], ['ClaimedAt', 'datetime'],
-    ['ReleasedAt', 'datetime'], ['CalendarEventId', 'text']
+    ['ReleasedAt', 'datetime'], ['CalendarEventId', 'text'],
+    ['ClaimedBy', 'text'], ['ReleasedBy', 'text'], ['Source', 'text']
   ],
   Settings: [['Key', 'text'], ['Value', 'text'], ['Notes', 'text']],
   Admins: [['Email', 'text'], ['Name', 'text'], ['Active', 'bool']],
@@ -77,7 +79,13 @@ var SCHEMAS = {
 /** [key, default, note]. Values are only written when a key is missing. */
 var SETTING_DEFAULTS = [
   ['BackgroundCheckIntervalMonths', '', 'Blank = no recurrence. Pending legal advice.'],
-  ['CalendarHorizonDays', '180', 'Call calendar rolling horizon (Phase 3).'],
+  ['CalendarHorizonDays', '180', 'How many days ahead volunteers can claim call.'],
+  ['ShiftStartTime', '17:00', 'When each 24-hour call day starts (24-hour clock, the Sheet\'s time zone).'],
+  ['LateReleaseDays', '7', 'A volunteer releasing a day this close to it emails the admins at once.'],
+  ['SendOnCallReminders', 'TRUE', 'TRUE = email the volunteer the day before their call day.'],
+  ['CoverageAlerts', 'TRUE', 'TRUE = email admins about uncovered days in the next CoverageAlertDays.'],
+  ['CoverageAlertDays', '14', 'How far ahead coverage gaps are alerted.'],
+  ['CallCalendarId', '', 'Set automatically: the HFJ On Call Google Calendar.'],
   ['BlockIneligibleClaims', 'FALSE', 'FALSE = warn only. Flip to TRUE once all volunteers are backfilled.'],
   ['ReminderLeadDays', '60', 'Days before a credential expires that the first reminder goes out.'],
   ['OverdueReminderIntervalDays', '30', 'Repeat interval for expired-credential reminders.'],

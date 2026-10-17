@@ -8,9 +8,12 @@ import crypto from 'node:crypto';
 
 // One Date class for both the fake sheets and the app, as in a single Apps Script runtime.
 let clock = '2026-10-09';
+/** Moves the fake clock: 'yyyy-MM-dd' (noon UTC) or a full ISO time. */
+export function setClock(c) { clock = c; }
+
 export class GasDate extends Date {
-  constructor(...a) { if (a.length) super(...a); else super(Date.parse(clock + 'T12:00:00Z')); }
-  static now() { return Date.parse(clock + 'T12:00:00Z'); }
+  constructor(...a) { if (a.length) super(...a); else super(GasDate.now()); }
+  static now() { return Date.parse(clock.length > 10 ? clock : clock + 'T12:00:00Z'); }
 }
 
 class Sheet {
@@ -84,12 +87,36 @@ export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {
   let fileSeq = 0;
   const signed = (buf) => Array.from(buf, (b) => (b > 127 ? b - 256 : b));
   const blob = (bytes, mime) => ({ bytes, mime, name: '', setName(n) { this.name = n; return this; } });
-  const state = { user, effective: 'volunteers@hfjvc.org' };
+  const state = { user, effective: 'volunteers@hfjvc.org', now: null };
+  // Google Calendar: calendars by id, each with its events. `external` holds calendars shared with the account.
+  const calendars = {};
+  let calSeq = 0, evSeq = 0;
+  const makeCalendar = (id, name) => {
+    const cal = { id, name, events: [],
+      getId: () => id,
+      createEvent(title, start, end, opts = {}) {
+        const ev = { id: 'ev' + ++evSeq, title, start, end, opts, deleted: false,
+          getId() { return this.id; }, getTitle() { return this.title; }, isAllDayEvent: () => false,
+          getStartTime() { return this.start; }, deleteEvent() { this.deleted = true; } };
+        cal.events.push(ev);
+        return ev;
+      },
+      getEventById: (eid) => cal.events.find((e) => e.id === eid && !e.deleted) || null,
+      getEvents: (start, end) => cal.events.filter((e) => !e.deleted && e.start < end && (e.end || e.start) > start),
+    };
+    calendars[id] = cal;
+    return cal;
+  };
   clock = today;
   return {
-    main, sent, state, files, permissions,
+    main, sent, state, files, permissions, calendars, makeCalendar,
     globals: {
       Date: GasDate,
+      Logger: { log() {} },
+      CalendarApp: {
+        getCalendarById: (id) => calendars[id] || null,
+        createCalendar: (name) => makeCalendar('cal' + ++calSeq + '@group.calendar.google.com', name),
+      },
       SpreadsheetApp: {
         getActiveSpreadsheet: () => main,
         openById: () => { throw new Error('spreadsheets.currentonly: openById is not allowed'); },
@@ -106,6 +133,10 @@ export function fakeGas({ user = 'anthony@hfjvc.org', today = '2026-10-09' } = {
           throw new Error('fake formatDate: unsupported format ' + fmt);
         },
         getUuid: () => crypto.randomUUID(),
+        parseDate: (str, tz, fmt) => {
+          if (fmt !== 'yyyy-MM-dd HH:mm') throw new Error('fake parseDate: unsupported format ' + fmt);
+          return new GasDate(str.replace(' ', 'T') + ':00Z');
+        },
         DigestAlgorithm: { SHA_256: 'sha256' },
         Charset: { UTF_8: 'utf8' },
         computeDigest: (alg, s) => signed(crypto.createHash(alg).update(String(s), 'utf8').digest()),
