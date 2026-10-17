@@ -2,7 +2,8 @@
  * Daily time-driven job (installed by installTriggers): refresh computed
  * statuses, then send due reminders. Runs as the account that installed it.
  */
-function dailyJob() {
+function dailyJob(e) {
+  requireJobCaller_(e);
   var actor = { email: 'system', name: 'Daily job' };
   var today = today_();
   var policy = policy_();
@@ -21,6 +22,42 @@ function dailyJob() {
 
   sendReminders_(today, policy);
   if (policy.sendUpdateRequests) sendDocumentUpdates_(today, policy);
+  sendCallReminders_(today, policy);
+}
+
+/** On-call-tomorrow and coverage-gap emails (planCallReminders), then retries any failed calendar sync. */
+function sendCallReminders_(today, policy) {
+  var tz = getSpreadsheet_().getSpreadsheetTimeZone();
+  var log = {};
+  readRows_(TABS.REMINDER_LOG).forEach(function (r) {
+    log[r.Key] = { lastSent: r.LastSentAt ? Utilities.formatDate(new Date(r.LastSentAt), tz, 'yyyy-MM-dd') : '' };
+  });
+  var plan = planCallReminders(readRows_(TABS.VOLUNTEERS), readRows_(TABS.CALL_SHIFTS), today, {
+    gapDays: policy.gapDays, onCallReminders: policy.onCallReminders, gapAlerts: policy.gapAlerts, startTime: shiftStartTime_()
+  }, log);
+  var admins = adminEmails_();
+  plan.forEach(function (r) {
+    try {
+      if (r.to) MailApp.sendEmail({ to: r.to, subject: r.subject, body: r.body, name: 'HFJ Volunteers' });
+      if (r.toAdmins) {
+        if (!admins.length) return;
+        var url = deployedUrls_().adminUrl;
+        MailApp.sendEmail({ to: admins.join(','), subject: '[HFJ Volunteers] ' + r.subject, name: 'HFJ Volunteers',
+          body: r.body + (url ? '\n\nCalendar: ' + url + '#/calendar' : '') });
+      }
+      withLock_(function () {
+        [].concat(r.key).forEach(function (k) { appendRow_(TABS.REMINDER_LOG, { Key: k, LastSentAt: new Date(), SendCount: 1 }); });
+      });
+      logAudit_('system', 'reminder.' + r.kind, 'Volunteer', r.volunteerId, r.subject);
+    } catch (err) {
+      logAudit_('system', 'reminder.error', 'Volunteer', r.volunteerId, [].concat(r.key).join(',') + ': ' + err.message);
+    }
+  });
+  try {
+    withLock_(syncMissingEvents_);
+  } catch (err) {
+    logAudit_('system', 'calendar.error', 'Calendar', '', 'Retry: ' + err.message);
+  }
 }
 
 /** Emails volunteers whose signed documents have a newer Version (planDocumentUpdates). */

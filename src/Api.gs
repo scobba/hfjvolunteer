@@ -256,3 +256,90 @@ function api_documents() {
     };
   });
 }
+
+// ---------------------------------------------------------------- Phase 3: call calendar
+
+/** One month of the call calendar, with names, counts against target and the calendar link. */
+function api_calendar(month) {
+  requireAdmin_();
+  var today = today_();
+  if (!isMonth(month)) month = today.slice(0, 7);
+  var view = adminMonth(readRows_(TABS.VOLUNTEERS), readRows_(TABS.CALL_SHIFTS), month, today);
+  var id = String(getSettings_().CallCalendarId || '').trim();
+  view.calendarId = id;
+  view.calendarName = '';
+  try { var cal = id && callCalendar_(); if (cal) view.calendarName = cal.getName(); } catch (e) { view.calendarName = ''; }
+  view.calendarUrl = id ? 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(id) : '';
+  view.startTime = shiftStartTime_();
+  view.today = today;
+  return view;
+}
+
+function api_assignShift(date, volunteerId, month) {
+  var actor = requireAdmin_();
+  withLock_(function () { claimShift_(String(volunteerId), String(date), actor, { byAdmin: true, source: 'admin', invite: true }); });
+  return api_calendar(month);
+}
+
+function api_unassignShift(date, month) {
+  var actor = requireAdmin_();
+  withLock_(function () { releaseShift_('', String(date), actor, true); });
+  return api_calendar(month);
+}
+
+/** Creates the HFJ On Call calendar if needed and adds any events that failed to sync. */
+function api_syncCalendar(month) {
+  requireAdmin_(); // runs as volunteers@, so this is where the calendar is first created
+  withLock_(function () { ensureCallCalendar_(); syncMissingEvents_(); });
+  return api_calendar(month);
+}
+
+/** Uses an existing HFJ Google Calendar for call days instead of creating HFJ On Call. */
+function api_useCalendar(calendarId, month) {
+  var actor = requireAdmin_();
+  withLock_(function () { useCallCalendar_(calendarId, actor); });
+  return api_calendar(month);
+}
+
+/** Reads an existing call calendar and matches its events to volunteers, without saving anything. */
+function api_importPreview(calendarId, from, to) {
+  requireAdmin_();
+  if (!isIsoDate(from) || !isIsoDate(to) || to < from) throw new Error('Choose a date range.');
+  if (daysBetween(from, to) > 400) throw new Error('Import at most about a year at a time.');
+  var events = readExternalCalendar_(calendarId, from, to);
+  var volunteers = readRows_(TABS.VOLUNTEERS);
+  return {
+    // Importing from the call calendar itself links its events rather than copying them.
+    linked: String(calendarId || '').trim() === String(getSettings_().CallCalendarId || '').trim(),
+    rows: matchImportEvents(events, volunteers, activeShiftsByDate(readRows_(TABS.CALL_SHIFTS))),
+    people: volunteers.filter(function (v) { return takesCall(v) && v.Status !== 'Departed'; })
+      .map(function (v) { return { volunteerId: v.VolunteerID, name: v.Name }; })
+      .sort(function (a, b) { return a.name < b.name ? -1 : 1; })
+  };
+}
+
+/**
+ * Saves previewed rows [{ date, volunteerId, eventId }] as claims. invite: also
+ * add each volunteer as a guest of new events. When calendarId is the call
+ * calendar itself, each row's existing event is linked (claimShift_ checks it's
+ * really on that calendar) instead of adding a copy.
+ */
+function api_importShifts(rows, invite, calendarId) {
+  var actor = requireAdmin_();
+  var linked = !!calendarId && String(calendarId).trim() === String(getSettings_().CallCalendarId || '').trim();
+  var result = { imported: 0, skipped: [] };
+  (rows || []).slice(0, 400).forEach(function (r) {
+    if (!r || !r.volunteerId) return;
+    try {
+      withLock_(function () {
+        claimShift_(String(r.volunteerId), String(r.date), actor,
+          { byAdmin: true, source: 'import', invite: !!invite, eventId: linked && r.eventId ? String(r.eventId) : '' });
+      });
+      result.imported++;
+    } catch (e) {
+      result.skipped.push(r.date + ': ' + e.message);
+    }
+  });
+  logAudit_(actor, 'shift.import', 'CallShift', '', result.imported + ' imported, ' + result.skipped.length + ' skipped');
+  return result;
+}

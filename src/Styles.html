@@ -90,6 +90,7 @@
   .side-by-side > div { border: 1px dashed var(--line); border-radius: 6px; padding: 8px; }
   .filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
   .filters input { min-width: 200px; }
+  .small.bad { color: var(--bad); }
   .reasons { margin: 4px 0 0; padding-left: 18px; color: var(--bad); font-size: 13px; }
   .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--navy);
     color: #fff; padding: 10px 16px; border-radius: 8px; max-width: calc(100% - 32px); z-index: 10; }
@@ -101,7 +102,32 @@
   details summary { color: var(--navy); cursor: pointer; }
   .docpreview { border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; margin-top: 6px; max-height: 360px; overflow-y: auto; }
   .docpreview h1 { font-size: 17px; } .docpreview h2 { font-size: 14px; }
+  /* Call calendar month grid (CallGrid.html). */
+  .cg-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .cg-nav h2 { margin: 0; min-width: 150px; text-align: center; }
+  .callgrid { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .cg-head, .cg-body { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .cg-head div { font-family: var(--heading); font-size: 12px; font-weight: 600; color: var(--sage-ink); text-align: center;
+    padding: 6px 0; background: var(--sky-soft); }
+  .cg-cell { min-height: 74px; padding: 4px 6px; border-top: 1px solid var(--line); border-left: 1px solid var(--line);
+    font-size: 12px; overflow: hidden; background: #fff; }
+  .cg-cell:nth-child(7n+1) { border-left: 0; }
+  .cg-num { font-weight: 600; color: var(--muted); }
+  .cg-pad, .cg-cell.past, .cg-cell.later { background: #f7f8fa; color: var(--muted); }
+  .cg-cell.open { background: #fff8e6; cursor: pointer; }
+  .cg-cell.open:hover, .cg-cell.pick:hover { outline: 2px solid var(--navy); outline-offset: -2px; }
+  .cg-cell.open .cg-num { color: var(--warn); }
+  .cg-cell.mine { background: var(--ok-bg); cursor: pointer; }
+  .cg-cell.mine .cg-num, .cg-cell.mine .cg-tag { color: var(--ok); font-weight: 600; }
+  .cg-cell.taken { background: var(--sky-soft); }
+  .cg-cell.pick { cursor: pointer; }
+  .cg-cell.sel { outline: 2px solid var(--navy); outline-offset: -2px; }
+  .cg-tag { display: block; margin-top: 2px; line-height: 1.25; word-break: break-word; }
+  .cg-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .cg-legend span::before { content: ''; display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+    margin-right: 5px; vertical-align: -1px; border: 1px solid var(--line); background: var(--sw); }
   @media (max-width: 600px) {
+    .cg-cell { min-height: 52px; padding: 3px; font-size: 10px; }
     .top { padding: 8px 16px 7px; }
     .top .brand img { height: 38px; }
     .top nav { margin-left: 0; gap: 2px 16px; }

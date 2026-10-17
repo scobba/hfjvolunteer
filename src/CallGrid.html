@@ -1,0 +1,40 @@
+<script>
+/** Month grid shared by the dashboard and the volunteer portal. Weeks start on Sunday. */
+var CallGrid = (function () {
+  'use strict';
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  function parts(iso) { return iso.split('-').map(Number); }
+  function weekday(iso) { var p = parts(iso); return new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay(); }
+
+  function label(month) { var p = parts(month); return MONTHS[p[1] - 1] + ' ' + p[0]; }
+
+  function shift(month, n) {
+    var p = parts(month);
+    var d = new Date(Date.UTC(p[0], p[1] - 1 + n, 1));
+    return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2);
+  }
+
+  /** "Tue, Oct 20" */
+  function pretty(iso) {
+    var p = parts(iso);
+    return DAYS[weekday(iso)] + ', ' + MONTHS[p[1] - 1].slice(0, 3) + ' ' + p[2];
+  }
+
+  /** days: [{ date, ... }] for one month; cell(day) returns { cls, html, attrs }. */
+  function grid(days, cell) {
+    var html = '<div class="callgrid" role="grid"><div class="cg-head">' +
+      DAYS.map(function (d) { return '<div>' + d + '</div>'; }).join('') + '</div><div class="cg-body">';
+    for (var i = 0; i < weekday(days[0].date); i++) html += '<div class="cg-cell cg-pad"></div>';
+    days.forEach(function (d) {
+      var c = cell(d) || {};
+      html += '<div class="cg-cell ' + (c.cls || '') + '" ' + (c.attrs || '') + '><div class="cg-num">' +
+        Number(d.date.slice(8)) + '</div>' + (c.html || '') + '</div>';
+    });
+    return html + '</div></div>';
+  }
+
+  return { label: label, shift: shift, pretty: pretty, grid: grid };
+})();
+</script>

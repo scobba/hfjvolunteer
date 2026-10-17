@@ -7,9 +7,13 @@ Google Sheet; deployed with clasp from `src/`. No PHI in this system.
   declarations at top level; private server functions end in `_`;
   functions the page calls are `api_*` in `Api.gs` and must call `requireAdmin_()`.
 - Pure logic (no Apps Script services) lives in `Dates`, `Config`, `Matrix`,
-  `Eligibility`, `Dashboard`, `Reminders`, `Documents`, `Render`, `Uploads`,
+  `Eligibility`, `Dashboard`, `Reminders`, `Calendar`, `Documents`, `Render`, `Uploads`,
   `Onboarding`, `parseInviteList` and the parse half of `Migration`.
   Keep it that way so it stays testable.
+- Any top-level function without a trailing `_` can be called from the public
+  portal page via `google.script.run`. Server-only entry points (triggers, menu
+  items) must be guarded like `dailyJob` (`requireJobCaller_`) and listed in
+  `test/guards.test.mjs`, which fails on any unguarded public function.
 - Volunteer-facing calls are `portal_*` / `supervisor_*` in `Portal.gs`: they take
   the link token, resolve the volunteer server-side, and must never trust an ID
   or path from the browser. Document *text* lives in the Sheet's Documents tab
