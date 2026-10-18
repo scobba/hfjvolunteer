@@ -27,6 +27,11 @@ function dailyJob(e) {
 
 /** On-call-tomorrow and coverage-gap emails (planCallReminders), then retries any failed calendar sync. */
 function sendCallReminders_(today, policy) {
+  try {
+    withLock_(syncFromCalendar_); // so reminders and gap alerts see changes made on the calendar
+  } catch (err) {
+    logAudit_('system', 'calendar.error', 'Calendar', '', 'Sync: ' + err.message);
+  }
   var tz = getSpreadsheet_().getSpreadsheetTimeZone();
   var log = {};
   readRows_(TABS.REMINDER_LOG).forEach(function (r) {

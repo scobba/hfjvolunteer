@@ -47,7 +47,7 @@ var SCHEMAS = {
   CallShifts: [
     ['ShiftDate', 'date'], ['VolunteerID', 'text'], ['ClaimedAt', 'datetime'],
     ['ReleasedAt', 'datetime'], ['CalendarEventId', 'text'],
-    ['ClaimedBy', 'text'], ['ReleasedBy', 'text'], ['Source', 'text']
+    ['ClaimedBy', 'text'], ['ReleasedBy', 'text'], ['Source', 'text'], ['EventTitle', 'text']
   ],
   Settings: [['Key', 'text'], ['Value', 'text'], ['Notes', 'text']],
   Admins: [['Email', 'text'], ['Name', 'text'], ['Active', 'bool']],

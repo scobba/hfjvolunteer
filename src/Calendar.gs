@@ -141,29 +141,136 @@ function planCallReminders(volunteers, shifts, today, opts, log) {
   return out;
 }
 
+/** Volunteers who can be named on the call calendar: they take call and haven't left. */
+function calendarPeople(volunteers) {
+  return volunteers.filter(function (v) { return takesCall(v) && v.Status !== 'Departed' && v.Status !== 'Inactive'; });
+}
+
+/**
+ * Who an event title names: { volunteerId } when exactly one person matches,
+ * else { volunteerId: '', ambiguous }. A full name (or preferred + last name)
+ * as whole words beats a shared last name: "Emily Walls" is Emily, not Sam
+ * Walls; "Dr. Walls" matches both and is left for an admin.
+ * everyone: all volunteers, so a full name belonging to someone who doesn't
+ * take call ("Rita Lee", an RN) isn't read as a physician who shares the last name.
+ */
+function matchVolunteerTitle(title, people, everyone) {
+  var words = function (s) { return ' ' + String(s || '').toLowerCase().replace(/[^a-zÀ-ɏ']+/g, ' ').trim() + ' '; };
+  var t = words(title);
+  var has = function (n) { var w = words(n); return w.trim().length > 1 && t.indexOf(w) !== -1; };
+  var last = function (v) { return String(v.Name || '').trim().split(/\s+/).pop(); };
+  var full = function (v) { return has(v.Name) || (v.PreferredName && has(v.PreferredName + ' ' + last(v))); };
+  var hits = people.filter(full);
+  if (!hits.length && (everyone || []).some(full)) return { volunteerId: '', ambiguous: false };
+  if (!hits.length) hits = people.filter(function (v) { return has(last(v)); });
+  return { volunteerId: hits.length === 1 ? hits[0].VolunteerID : '', ambiguous: hits.length > 1 };
+}
+
 /**
  * Matches events from an existing call calendar to volunteers who take call.
- * events: [{ date, title }] (an all-day event spanning days arrives as one per day).
- * A volunteer matches when their full name (or preferred + last name) is in the
- * title as whole words, or failing that their last name; a title naming
- * nobody, or two people, is left for the admin to pick.
+ * events: [{ date, title, eventId }] (an all-day event spanning days arrives as one per day).
+ * A title naming nobody, or two people, is left for the admin to pick.
  */
 function matchImportEvents(events, volunteers, byDate) {
-  var people = volunteers.filter(function (v) { return takesCall(v) && v.Status !== 'Departed'; });
-  var words = function (s) { return ' ' + String(s || '').toLowerCase().replace(/[^a-zÀ-ɏ']+/g, ' ').trim() + ' '; };
+  var people = calendarPeople(volunteers);
   return events.map(function (e) {
-    var t = words(e.title);
-    var has = function (n) { var w = words(n); return w.trim().length > 1 && t.indexOf(w) !== -1; };
-    var last = function (v) { return String(v.Name || '').trim().split(/\s+/).pop(); };
-    // A full name beats a shared last name ("Emily Walls" is Emily, not Sam Walls).
-    var hits = people.filter(function (v) { return has(v.Name) || (v.PreferredName && has(v.PreferredName + ' ' + last(v))); });
-    if (!hits.length) hits = people.filter(function (v) { return has(last(v)); });
+    var m = matchVolunteerTitle(e.title, people, volunteers);
     var taken = byDate[e.date];
     return {
       date: e.date, title: e.title, eventId: e.eventId || '',
-      volunteerId: hits.length === 1 ? hits[0].VolunteerID : '',
-      note: taken ? 'Already claimed in HFJ' : hits.length > 1 ? 'Matches more than one person' : hits.length ? '' : 'No name matched',
+      volunteerId: m.volunteerId,
+      note: taken ? 'Already claimed in HFJ' : m.ambiguous ? 'Matches more than one person' : m.volunteerId ? '' : 'No name matched',
       skip: !!taken
     };
   });
+}
+
+/**
+ * Two-way sync, calendar → app: what to change so the app matches the call
+ * calendar between opts.from and opts.to (the app → calendar direction
+ * happens as each change is made). Pure; CalendarSync.gs applies it.
+ *
+ * events: [{ eventId, title, dates: [...] }] on the call calendar (an all-day
+ *   event spanning days, or a recurring one, carries several dates).
+ * shifts: CallShifts rows. A claim is linked to its event by CalendarEventId,
+ *   and EventTitle is the title when it was linked.
+ * opts: { from, to, ignored: { eventId: true } }
+ *
+ * Returns:
+ *   releases: [{ row, reason }]  deleted, moved, or renamed to someone else
+ *   claims:   [{ date, volunteerId, eventId, title }]  new, or the far side of a move
+ *   retitles: [{ row, title }]  a linked event's title changed without changing who
+ *   flags:    [{ eventId, title, dates, problem }]  for an admin to sort out
+ *
+ * Rules:
+ * - A linked event that's gone releases its days.
+ * - An event belongs to the volunteer its title names. Once linked, it stays
+ *   with that volunteer unless the title is changed to name someone else, so
+ *   an admin's choice for an ambiguous title ("Dr. Walls") sticks.
+ * - Days the event no longer covers are released; days it newly covers are
+ *   claimed, unless someone else has the day (flagged as a conflict).
+ * - A day the app released while the event stayed (one day of a multi-day or
+ *   recurring event) isn't claimed again.
+ * - Past days are history and never touched.
+ */
+function reconcileCalendar(events, shifts, volunteers, opts) {
+  var people = calendarPeople(volunteers);
+  var ignored = opts.ignored || {};
+  var inWindow = function (d) { return d >= opts.from && d <= opts.to; };
+  var active = shifts.filter(function (s) { return s.VolunteerID && !s.ReleasedAt && inWindow(s.ShiftDate); });
+  var released = {};
+  shifts.forEach(function (s) {
+    if (s.ReleasedAt && s.CalendarEventId && s.ReleasedBy !== 'calendar') released[s.CalendarEventId + '|' + s.ShiftDate] = true;
+  });
+  var byEvent = {}, byDate = {};
+  active.forEach(function (s) {
+    byDate[s.ShiftDate] = s;
+    if (s.CalendarEventId) (byEvent[s.CalendarEventId] = byEvent[s.CalendarEventId] || []).push(s);
+  });
+  var eventsById = {};
+  events.forEach(function (e) { eventsById[e.eventId] = e; });
+
+  var out = { releases: [], claims: [], retitles: [], flags: [] };
+  var release = function (s, reason) { out.releases.push({ row: s, reason: reason }); if (byDate[s.ShiftDate] === s) delete byDate[s.ShiftDate]; };
+
+  Object.keys(byEvent).forEach(function (id) {
+    if (!eventsById[id]) byEvent[id].forEach(function (s) { release(s, 'removed from the calendar'); });
+  });
+
+  events.forEach(function (e) {
+    var dates = e.dates.filter(inWindow);
+    var linked = byEvent[e.eventId] || [];
+    var match = matchVolunteerTitle(e.title, people, volunteers);
+    var owner = linked.length ? linked[0].VolunteerID : '';
+    var renamed = linked.some(function (s) { return s.EventTitle && s.EventTitle !== e.title; });
+    var target = !owner ? match.volunteerId : renamed && match.volunteerId ? match.volunteerId : owner;
+    if (!target) {
+      if (dates.length && !ignored[e.eventId]) {
+        out.flags.push({ eventId: e.eventId, title: e.title, dates: dates,
+          problem: match.ambiguous ? 'Matches more than one volunteer' : 'Doesn\'t name a volunteer who takes call' });
+      }
+      return;
+    }
+    var kept = {};
+    linked.forEach(function (s) {
+      if (s.VolunteerID !== target) release(s, 'renamed on the calendar');
+      else if (dates.indexOf(s.ShiftDate) === -1) release(s, 'moved on the calendar');
+      else {
+        kept[s.ShiftDate] = true;
+        if (s.EventTitle !== e.title) out.retitles.push({ row: s, title: e.title });
+      }
+    });
+    var conflicts = [];
+    dates.forEach(function (d) {
+      if (kept[d] || released[e.eventId + '|' + d]) return;
+      var other = byDate[d];
+      if (other) { if (other.VolunteerID !== target) conflicts.push(d); return; }
+      out.claims.push({ date: d, volunteerId: target, eventId: e.eventId, title: e.title });
+      byDate[d] = { VolunteerID: target, ShiftDate: d };
+    });
+    if (conflicts.length && !ignored[e.eventId]) {
+      out.flags.push({ eventId: e.eventId, title: e.title, dates: conflicts, problem: 'Someone else already has this day in the app' });
+    }
+  });
+  return out;
 }

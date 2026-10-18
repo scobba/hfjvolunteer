@@ -99,6 +99,10 @@
         html += '<div class="banner">Not yet in the Documents tab: ' + esc(d.missingDocuments.join(', ')) +
           '. Volunteers will see these as “not yet available”. <a href="#/documents">Documents</a></div>';
       }
+      if (d.calendarFlags) {
+        html += '<div class="banner">' + d.calendarFlags + ' event' + (d.calendarFlags > 1 ? 's' : '') + ' on the call calendar need' +
+          (d.calendarFlags > 1 ? '' : 's') + ' a look. <a href="#/calendar">Calendar</a></div>';
+      }
       html += '<p class="muted small">' + d.counts.active + ' active · ' + d.counts.prospective +
         ' onboarding · as of ' + esc(d.today) + '</p><div class="grid">';
 
@@ -583,6 +587,17 @@
     });
     html += '<div class="cg-legend"><span style="--sw:#fff8e6">Open</span><span style="--sw:var(--sky-soft)">Covered</span><span>⚠ not on Google Calendar yet</span></div>';
     html += '<div id="dayPanel"></div>';
+    var flags = (c.review && c.review.flags) || [];
+    if (flags.length) {
+      var who = c.people.map(function (p) { return { value: p.volunteerId, label: p.name }; });
+      html += '<div class="card" style="margin-top:14px;border-left:4px solid #d9a441"><h2>Needs a look<span class="count">' + flags.length + '</span></h2>' +
+        '<p class="small muted">Events on the Google Calendar the app couldn\'t match. Assign each to a volunteer, or ignore it if it isn\'t a call day.</p><ul class="list">' +
+        flags.map(function (f, i) {
+          return '<li><b>' + esc(f.title || '(no title)') + '</b> <span class="small muted">' + f.dates.map(function (d) { return esc(CallGrid.pretty(d)); }).join(', ') + '</span>' +
+            '<div class="small">' + esc(f.problem) + '</div><div class="actions" style="margin-top:6px"><select data-flagwho="' + i + '">' + options(who, '', 'Choose a volunteer') + '</select>' +
+            '<button class="small-btn" data-flagassign="' + i + '">Assign</button><button class="secondary small-btn" data-flagignore="' + i + '">Ignore</button></div></li>';
+        }).join('') + '</ul></div>';
+    }
 
     html += '<div class="grid" style="margin-top:14px"><div class="card"><h2>This month by volunteer</h2>' +
       (c.people.length ? '<table><thead><tr><th>Name</th><th>Days</th><th>Target</th></tr></thead><tbody>' + c.people.map(function (p) {
@@ -595,7 +610,9 @@
       ? '<p class="small">Claimed days go on <b>' + esc(calName) + '</b>, and each volunteer is invited to their own days. ' +
         link(c.calendarUrl, 'Open it') + '</p>' + (c.calendarName ? '' : '<p class="small bad">The app can\'t open this calendar. Share it with the HFJ Volunteers account with <i>Make changes to events</i>.</p>')
       : '<p class="small">Choose where claimed days go: an existing HFJ calendar, or a new <b>HFJ On Call</b> calendar.</p>') +
-      '<div class="actions"><button class="secondary" id="cgSync">' + (c.calendarId ? 'Sync missing events' : 'Create HFJ On Call') + '</button></div>' +
+      (c.calendarId ? '<p class="small muted">Two-way: days added, moved, renamed or deleted on the calendar show up here within 15 minutes, or when this page opens' +
+        (c.syncedAt ? ' (last checked ' + esc(new Date(c.syncedAt).toLocaleString()) + ')' : '') + '.</p>' : '') +
+      '<div class="actions"><button class="secondary" id="cgSync">' + (c.calendarId ? 'Sync now' : 'Create HFJ On Call') + '</button></div>' +
       '<details style="margin-top:10px"' + (c.calendarId ? '' : ' open') + '><summary class="small">Use an existing calendar' + (c.calendarId ? ' instead' : '') + '</summary>' +
       '<p class="small muted">Share it with the HFJ Volunteers account with <i>Make changes to events</i>, then paste its calendar ID (Google Calendar → Settings → that calendar → <i>Integrate calendar</i>). ' +
       'Events already on it stay; import them below to link them to volunteers.</p>' +
@@ -630,6 +647,23 @@
       e.target.disabled = true;
       call('api_syncCalendar', c.month).then(function (n) { toast('Calendar up to date'); drawCalendar(n); }).catch(function (err) { e.target.disabled = false; fail(err); });
     };
+    app.querySelectorAll('[data-flagassign]').forEach(function (b) {
+      b.onclick = function () {
+        var f = flags[+b.dataset.flagassign], who = app.querySelector('[data-flagwho="' + b.dataset.flagassign + '"]').value;
+        if (!who) return fail(new Error('Choose a volunteer.'));
+        b.disabled = true;
+        call('api_resolveCalendarEvent', f.eventId, who, c.month).then(function (n) { toast('Assigned'); drawCalendar(n); })
+          .catch(function (err) { b.disabled = false; fail(err); });
+      };
+    });
+    app.querySelectorAll('[data-flagignore]').forEach(function (b) {
+      b.onclick = function () {
+        var f = flags[+b.dataset.flagignore];
+        b.disabled = true;
+        call('api_ignoreCalendarEvent', f.eventId, c.month).then(function (n) { toast('Ignored'); drawCalendar(n); })
+          .catch(function (err) { b.disabled = false; fail(err); });
+      };
+    });
     app.querySelectorAll('[data-day]').forEach(function (el) {
       var pick = function () { calSel = el.dataset.day; drawCalendar(c); };
       el.onclick = pick;

@@ -175,18 +175,39 @@ Upload** the CSV I provided. Choose **Replace current sheet**, and untick
      volunteers@, so the calendar is theirs; share it with the admins from
      Google Calendar as volunteers@. (The first claimed day also creates it
      if nothing was chosen.)
-3. **Import the current schedule:** Calendar → *Import the current schedule*,
-   preview, fix any rows, Import.
-   - From the calendar chosen in step 2, importing **links** each existing event
-     to its volunteer: nothing is copied or changed, and releasing that day later
-     removes the event. (An all-day event covering several days stays until the
-     last of its days is released.)
-   - From any other calendar (shared with volunteers@, *See all event details*),
-     the days are **copied** onto the call calendar; the old calendar is left alone.
+3. **Install the triggers as volunteers@:** Sheet → HFJ Volunteers → *Install
+   triggers (daily job + calendar sync)*, signed in as volunteers@ (triggers
+   run as whoever installs them). This replaces the old daily trigger.
+4. **Existing days come in by themselves:** the first sync links every event on
+   the chosen calendar in the next `CalendarHorizonDays` to its volunteer, and
+   lists the rest under *Needs a look*. To bring days in from a *different*
+   calendar (shared with volunteers@, *See all event details*), use *Import the
+   current schedule*; those are copied onto the call calendar.
 
-The Sheet's CallShifts tab is the record; the calendar shows it. Events added
-or moved by hand in Google Calendar aren't read back into the app, so make
-changes through the dashboard or the volunteer's link.
+### Two-way sync
+
+Changes made directly on the call calendar reach the app every 15 minutes
+(the `calendarSync` trigger), whenever the Calendar page or a volunteer's
+calendar opens, and before the daily reminders:
+
+| On the calendar | In the app |
+|---|---|
+| An event naming a volunteer who takes call (just the name is enough) | That day is theirs (Source `calendar`). Not eligible: the day stands and admins are emailed. |
+| The event deleted | The day is released |
+| The event moved to another day | The day moves |
+| The title changed to someone else | The day is reassigned. A note added to the same name (“Ann Lee – swap”) keeps it. |
+| A name matching two people (“Dr. Walls”), no volunteer (“Staff meeting”), or a day someone already has in the app | **Needs a look** on the Calendar page (and one email): assign it to someone, or ignore it |
+
+Days changed in the app go onto the calendar straight away, as before.
+Past days are never changed by the sync. If more than half the upcoming days
+(and more than 5) vanish from the calendar at once, the sync pauses and emails
+the admins rather than releasing everyone. One day given up in the app from a
+multi-day or recurring calendar event leaves that event in place (edit it on
+the calendar), and the day isn't taken back by the next sync.
+
+Google Calendar doesn't say who edited an event, so changes from the calendar
+are logged as `calendar` in the AuditLog. The Sheet's CallShifts tab still
+keeps the full history.
 
 ## Setup (one time)
 

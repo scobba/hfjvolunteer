@@ -40,7 +40,7 @@ function include(name) {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('HFJ Volunteers')
     .addItem('Set up tabs', 'setupTabs')
-    .addItem('Install daily reminder trigger', 'installTriggers')
+    .addItem('Install triggers (daily job + calendar sync)', 'installTriggers')
     .addSeparator()
     .addItem('Migration: dry run (writes MigrationReport)', 'menuMigrationDryRun')
     .addItem('Migration: import volunteers', 'menuMigrationCommit')
