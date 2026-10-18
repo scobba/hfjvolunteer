@@ -59,12 +59,17 @@ function formatColumns_(sh, tab) {
   });
 }
 
-/** Installs the daily reminder trigger (replacing any earlier one). */
+/**
+ * Installs the daily job and the 15-minute calendar sync (replacing any
+ * earlier ones). Run it as the HFJ Volunteers account: triggers run as
+ * whoever installs them.
+ */
 function installTriggers() {
-  requireAdmin_();
+  var actor = requireJobCaller_();
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'dailyJob') ScriptApp.deleteTrigger(t);
+    if (t.getHandlerFunction() === 'dailyJob' || t.getHandlerFunction() === 'calendarSync') ScriptApp.deleteTrigger(t);
   });
   ScriptApp.newTrigger('dailyJob').timeBased().everyDays(1).atHour(6).create();
-  logAudit_(currentEmail_(), 'setup.triggers', 'Trigger', 'dailyJob', 'Daily at 06:00');
+  ScriptApp.newTrigger('calendarSync').timeBased().everyMinutes(15).create();
+  logAudit_(actor, 'setup.triggers', 'Trigger', 'dailyJob, calendarSync', 'Daily at 06:00; calendar sync every 15 minutes');
 }

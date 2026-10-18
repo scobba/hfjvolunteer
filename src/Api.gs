@@ -29,6 +29,7 @@ function api_dashboard() {
   data.documents = docs;
   var d = buildDashboard(data, today_(), { reminderLeadDays: p.reminderLeadDays, bgIntervalMonths: p.bgIntervalMonths });
   d.sendUpdateRequests = p.sendUpdateRequests;
+  d.calendarFlags = calendarReview_().flags.length;
   d.missingDocuments = DOC_ORDER.filter(function (k) { return !docs[k]; })
     .map(function (k) { return DOC_DEFAULT_TITLES[k] + ' (' + k + ')'; });
   return d;
@@ -262,6 +263,7 @@ function api_documents() {
 /** One month of the call calendar, with names, counts against target and the calendar link. */
 function api_calendar(month) {
   requireAdmin_();
+  maybeSyncCalendar_();
   var today = today_();
   if (!isMonth(month)) month = today.slice(0, 7);
   var view = adminMonth(readRows_(TABS.VOLUNTEERS), readRows_(TABS.CALL_SHIFTS), month, today);
@@ -272,7 +274,41 @@ function api_calendar(month) {
   view.calendarUrl = id ? 'https://calendar.google.com/calendar/u/0/r?cid=' + encodeURIComponent(id) : '';
   view.startTime = shiftStartTime_();
   view.today = today;
+  var review = calendarReview_();
+  view.review = { at: review.at, flags: review.flags };
+  view.syncedAt = review.at;
   return view;
+}
+
+/** Assigns a "needs a look" calendar event to a volunteer: links it to claims for its days. */
+function api_resolveCalendarEvent(eventId, volunteerId, month) {
+  var actor = requireAdmin_();
+  withLock_(function () {
+    var flag = calendarReview_().flags.filter(function (f) { return f.eventId === String(eventId); })[0];
+    if (!flag) throw new Error('That event isn\'t waiting for a look any more. Refresh the page.');
+    flag.dates.forEach(function (d) {
+      claimShift_(String(volunteerId), d, actor, { byAdmin: true, source: 'calendar', eventId: flag.eventId, eventTitle: flag.title, invite: false });
+    });
+    logAudit_(actor, 'calendar.assign', 'Calendar', flag.eventId, '"' + flag.title + '" → ' + volunteerId);
+    syncFromCalendar_();
+  });
+  return api_calendar(month);
+}
+
+/** Stops flagging a calendar event that isn't a call day (a meeting, a note). */
+function api_ignoreCalendarEvent(eventId, month) {
+  var actor = requireAdmin_();
+  withLock_(function () {
+    var ids = readJsonProp_('calendarIgnored', []);
+    if (ids.indexOf(String(eventId)) === -1) ids.push(String(eventId));
+    syncProps_().setProperty('calendarIgnored', JSON.stringify(ids.slice(-500)));
+    var review = calendarReview_();
+    var flag = review.flags.filter(function (f) { return f.eventId === String(eventId); })[0];
+    review.flags = review.flags.filter(function (f) { return f.eventId !== String(eventId); });
+    syncProps_().setProperty('calendarReview', JSON.stringify(review));
+    logAudit_(actor, 'calendar.ignore', 'Calendar', String(eventId), flag ? '"' + flag.title + '"' : '');
+  });
+  return api_calendar(month);
 }
 
 function api_assignShift(date, volunteerId, month) {
@@ -290,7 +326,7 @@ function api_unassignShift(date, month) {
 /** Creates the HFJ On Call calendar if needed and adds any events that failed to sync. */
 function api_syncCalendar(month) {
   requireAdmin_(); // runs as volunteers@, so this is where the calendar is first created
-  withLock_(function () { ensureCallCalendar_(); syncMissingEvents_(); });
+  withLock_(function () { ensureCallCalendar_(); syncFromCalendar_(); syncMissingEvents_(); });
   return api_calendar(month);
 }
 

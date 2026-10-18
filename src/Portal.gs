@@ -180,7 +180,9 @@ function portalCallVolunteer_(token, action) {
 
 /** Read-only, so not written to the AuditLog on every month the volunteer flips through. */
 function portal_calendar(token, month) {
-  return portalCalendar_(portalCallVolunteer_(token, ''), String(month || ''));
+  var v = portalCallVolunteer_(token, '');
+  maybeSyncCalendar_();
+  return portalCalendar_(v, String(month || ''));
 }
 
 function portal_claim(token, date, month) {

@@ -19,7 +19,7 @@ const PURE_ELSEWHERE = ['parseInviteList', 'assertAllowedShare', 'bytesToHex', '
   'parseCallTarget', 'parseCredential', 'parseStatus', 'parseSourceTab', 'addRequirementCell',
   'resolveRequirementKeys', 'mergeRecords', 'migrationSourceTabNames'];
 /** Entry points with side effects, each guarded (see the test below). */
-const GUARDED = ['dailyJob', 'setupTabs', 'installTriggers', 'migrationDryRun', 'migrationCommit',
+const GUARDED = ['dailyJob', 'calendarSync', 'setupTabs', 'installTriggers', 'migrationDryRun', 'migrationCommit',
   'menuMigrationDryRun', 'menuMigrationCommit', 'authorizeCalendar'];
 const PLATFORM = ['doGet', 'include', 'onOpen'];
 

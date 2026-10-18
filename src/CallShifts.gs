@@ -83,8 +83,9 @@ function syncShiftEvent_(row, v, invite) {
     var opts = { description: 'Healthcare for Justice call, 24 hours from ' + shiftStartTime_() + '.\n' +
       'To give up this day, use your personal HFJ volunteer link, or contact HFJ.' };
     if (invite && v.Email) { opts.guests = v.Email; opts.sendInvites = true; }
-    var ev = ensureCallCalendar_().createEvent('HFJ on call: ' + v.Name, times.start, times.end, opts);
-    updateRow_(TABS.CALL_SHIFTS, row._row, { CalendarEventId: ev.getId() });
+    var title = 'HFJ on call: ' + v.Name;
+    var ev = ensureCallCalendar_().createEvent(title, times.start, times.end, opts);
+    updateRow_(TABS.CALL_SHIFTS, row._row, { CalendarEventId: ev.getId(), EventTitle: title });
     return true;
   } catch (e) {
     logAudit_('system', 'calendar.error', 'CallShift', row.ShiftDate, v.VolunteerID + ': ' + e.message);
@@ -110,9 +111,10 @@ function removeShiftEvent_(row) {
 /**
  * Claims `date` for a volunteer. Inside the lock. Returns { warning } when the
  * volunteer isn't eligible on that date and BlockIneligibleClaims is off.
- * opts: { byAdmin, source: 'portal' | 'admin' | 'import', invite, eventId }
+ * opts: { byAdmin, source: 'portal' | 'admin' | 'import' | 'calendar', invite, eventId, warnAdmins }
  * eventId: an event already on the call calendar for this day (an import from
- * that same calendar), linked instead of adding a duplicate.
+ * that same calendar, or one added there directly), linked instead of adding a
+ * duplicate. warnAdmins: email admins if not eligible even though byAdmin.
  */
 function claimShift_(volunteerId, date, actor, opts) {
   var v = findRow_(TABS.VOLUNTEERS, 'VolunteerID', volunteerId);
@@ -136,14 +138,20 @@ function claimShift_(volunteerId, date, actor, opts) {
   logAudit_(actor, 'shift.claim', 'CallShift', date, volunteerId + (opts.source === 'portal' ? '' : ' (' + opts.source + ')') +
     (e.eligible ? '' : ' — not eligible: ' + e.reasons.join('; ')));
   var existing = null;
-  if (opts.eventId) {
-    try { existing = callCalendar_() && callCalendar_().getEventById(String(opts.eventId)); } catch (err) { existing = null; }
+  if (opts.source === 'calendar') {
+    // Read off the calendar moments ago (CalendarSync.gs): link it, never add a copy.
+    updateRow_(TABS.CALL_SHIFTS, row._row, { CalendarEventId: String(opts.eventId), EventTitle: String(opts.eventTitle || '') });
+  } else {
+    if (opts.eventId) {
+      try { existing = callCalendar_() && callCalendar_().getEventById(String(opts.eventId)); } catch (err) { existing = null; }
+    }
+    if (existing) updateRow_(TABS.CALL_SHIFTS, row._row, { CalendarEventId: existing.getId(), EventTitle: existing.getTitle() });
+    else syncShiftEvent_(row, v, opts.invite !== false);
   }
-  if (existing) updateRow_(TABS.CALL_SHIFTS, row._row, { CalendarEventId: existing.getId() });
-  else syncShiftEvent_(row, v, opts.invite !== false);
-  if (!e.eligible && !opts.byAdmin) {
-    notifyAdmins_(v.Name + ' claimed ' + date + ' but isn\'t eligible', [
-      v.Name + ' (' + volunteerId + ') claimed call on ' + date + '. Eligibility is warn-only (BlockIneligibleClaims = FALSE), so the claim stands.',
+  if (!e.eligible && (!opts.byAdmin || opts.warnAdmins)) {
+    var how = opts.source === 'calendar' ? 'was put on call on ' + date + ' directly on the Google Calendar' : 'claimed call on ' + date;
+    notifyAdmins_(v.Name + (opts.source === 'calendar' ? ' is on the calendar for ' : ' claimed ') + date + ' but isn\'t eligible', [
+      v.Name + ' (' + volunteerId + ') ' + how + '. Eligibility is warn-only for this, so the day stands.',
       'Missing:'].concat(e.reasons.map(function (r) { return '- ' + r; })));
   }
   return { warning: e.eligible ? '' : e.reasons.join('; ') };
@@ -163,13 +171,17 @@ function releaseShift_(volunteerId, date, actor, byAdmin) {
   updateRow_(TABS.CALL_SHIFTS, row._row, { ReleasedAt: new Date(), ReleasedBy: actor.email });
   removeShiftEvent_(row);
   logAudit_(actor, 'shift.release', 'CallShift', date, row.VolunteerID + (byAdmin ? ' (by admin)' : ''));
-  var p = policy_();
-  if (!byAdmin && daysBetween(today_(), date) <= p.lateReleaseDays) {
-    var v = findRow_(TABS.VOLUNTEERS, 'VolunteerID', row.VolunteerID);
-    notifyAdmins_('Call day open again: ' + date, [
-      v.Name + ' (' + v.VolunteerID + ') released their call day on ' + date + ', ' + daysBetween(today_(), date) + ' day(s) from now.',
-      'No one is on call that day yet.']);
-  }
+  if (!byAdmin) notifyLateRelease_(row, 'released their call day');
+}
+
+/** Emails admins when a day inside LateReleaseDays is left uncovered. */
+function notifyLateRelease_(row, what) {
+  var days = daysBetween(today_(), row.ShiftDate);
+  if (days < 0 || days > policy_().lateReleaseDays) return;
+  var v = findRow_(TABS.VOLUNTEERS, 'VolunteerID', row.VolunteerID) || { Name: row.VolunteerID, VolunteerID: row.VolunteerID };
+  notifyAdmins_('Call day open again: ' + row.ShiftDate, [
+    v.Name + ' (' + v.VolunteerID + ') ' + what + ' on ' + row.ShiftDate + ', ' + days + ' day(s) from now.',
+    'No one is on call that day yet.']);
 }
 
 /**
