@@ -72,6 +72,7 @@
     return '<div class="task ' + t.status + '"><div class="dot">' + icon + '</div><div class="body">' +
       '<div class="title">' + esc(t.title) + ' <span class="chip ' + (t.status === 'done' ? 'ok' : t.status === 'todo' ? 'warn' : 'info') + '">' + label + '</span></div>' +
       (t.note ? '<div class="small muted">' + esc(t.note) + '</div>' : '') +
+      (/^https:\/\//.test(t.link || '') ? '<div class="small"><a href="' + esc(t.link) + '" target="_blank" rel="noopener noreferrer">Open the HFJ EHR ↗</a></div>' : '') +
       (actionable ? '<div class="actions" style="margin-top:6px"><button class="' + (t.status === 'todo' ? '' : 'secondary ') + 'small-btn" data-open="' + esc(t.key) + '">' +
         (openKey === t.key ? 'Close' : t.status === 'todo' ? 'Start' : 'Update') + '</button></div>' : '') +
       (openKey === t.key ? '<div id="panel" style="margin-top:10px"></div>' : '') +

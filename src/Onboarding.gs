@@ -91,8 +91,14 @@ function onboardingTasks(v, reqRows, creds, signatures, documents, today, opts) 
 
   defs.forEach(function (d) {
     if (d.owner !== 'admin') return;
+    var done = reqDone(d.key);
+    var note = done ? '' : 'HFJ takes care of this.';
+    if (d.key === 'athena') {
+      note = done ? 'Open the EHR at ' + EHR_URL.replace(/^https?:\/\//, '') + ' and sign in with your @hfjvc.org Google account.'
+        : 'HFJ sets up your @hfjvc.org Google account and adds you to the EHR.';
+    }
     tasks.push({ key: 'req-' + d.key, type: 'hfj', title: requirementLabel(d, info.group),
-      status: reqDone(d.key) ? 'done' : 'hfj', note: reqDone(d.key) ? '' : 'HFJ takes care of this.' });
+      status: done ? 'done' : 'hfj', note: note, link: done && d.key === 'athena' ? EHR_URL : '' });
   });
 
   return tasks;
