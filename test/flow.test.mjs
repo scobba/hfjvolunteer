@@ -147,3 +147,24 @@ test('daily job sends reminders once and logs them', () => {
   assert.equal(gas.sent.length, 2, 'not re-sent the next run');
   assert.equal(app.readRows_('ReminderLog').length, 2);
 });
+
+test('EHR access: renamed from Athena, stored labels updated by setup, portal points to the EHR once done', () => {
+  const { gas, app } = boot();
+  app.setupTabs();
+  const id = app.api_createVolunteer({ Name: 'Ann Lee', Email: 'ann@example.com', Credential: 'MD', Status: 'Active' });
+  const req = () => app.readRows_('Requirements').find((r) => r.RequirementKey === 'athena');
+  assert.equal(req().Requirement, 'HFJ EHR access provisioned');
+  app.updateRow_('Requirements', req()._row, { Requirement: 'Athena EMR access provisioned' }); // as stored before the rename
+  app.setupTabs();
+  assert.equal(req().Requirement, 'HFJ EHR access provisioned');
+  assert.ok(!JSON.stringify(app.api_volunteer(id)).includes('Athena'));
+
+  const task = () => JSON.parse(JSON.stringify(app.onboardingTasks(app.readRows_('Volunteers')[0], app.readRows_('Requirements'), [], [], {}, '2026-10-09', {})))
+    .find((t) => t.key === 'req-athena');
+  assert.match(task().note, /sets up your @hfjvc.org Google account/);
+  assert.equal(task().link, '');
+  app.api_updateRequirement(req().RequirementID, { Status: 'Complete', CompletedDate: '2026-10-09' });
+  assert.match(task().note, /hfjvc\.org\/ehr/);
+  assert.equal(task().link, 'https://hfjvc.org/ehr');
+  void gas;
+});

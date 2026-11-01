@@ -31,7 +31,8 @@ var REQUIREMENT_DEFS = [
     groups: ['MD_DO', 'NP_PA', 'RN_CNA', 'BH_LICENSED', 'BH_TRAINEE'] },
   { key: 'malpractice', label: 'Added to malpractice policy', owner: 'admin',
     groups: ['MD_DO', 'NP_PA', 'RN_CNA', 'BH_LICENSED', 'BH_TRAINEE'] },
-  { key: 'athena', label: 'Athena EMR access provisioned', owner: 'admin',
+  // The key dates from when the EHR was going to be Athena; it stays so existing Requirements rows still match.
+  { key: 'athena', label: 'HFJ EHR access provisioned', owner: 'admin',
     groups: ['MD_DO', 'NP_PA', 'RN_CNA', 'BH_LICENSED', 'BH_TRAINEE'] },
   { key: 'supervisor', label: 'Named supervisor', owner: 'admin', groups: ['NP_PA', 'BH_TRAINEE'] },
   { key: 'school', label: 'School/program verification', owner: 'admin', groups: ['BH_TRAINEE'] },

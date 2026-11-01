@@ -32,10 +32,24 @@ function setupTabs() {
 
   if (!hasAdmins && me) appendRow_(TABS.ADMINS, { Email: me, Name: '', Active: true });
 
+  relabelRequirements_();
+
   var blank = ss.getSheetByName('Sheet1');
   if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
 
   logAudit_(me || 'setup', 'setup.tabs', 'Spreadsheet', ss.getId(), 'Tabs created/extended');
+}
+
+/** Brings the Requirement text on existing rows in line with REQUIREMENT_DEFS (e.g. after a rename). */
+function relabelRequirements_() {
+  var groups = {};
+  readRows_(TABS.VOLUNTEERS).forEach(function (v) { var i = credentialInfo(v.Credential); groups[v.VolunteerID] = i ? i.group : ''; });
+  readRows_(TABS.REQUIREMENTS).forEach(function (r) {
+    var def = requirementDef(r.RequirementKey);
+    if (!def) return;
+    var label = requirementLabel(def, groups[r.VolunteerID] || '');
+    if (label !== r.Requirement) updateRow_(TABS.REQUIREMENTS, r._row, { Requirement: label });
+  });
 }
 
 /**

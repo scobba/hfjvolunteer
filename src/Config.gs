@@ -103,6 +103,9 @@ var BACKGROUND_DETERMINATIONS = ['Cleared', 'Conditional', 'Not cleared'];
 
 var DCA_SEARCH = 'https://search.dca.ca.gov/';
 
+/** Where providers open the HFJ EHR (sign-in with an @hfjvc.org account and the EHR's own allowlist). */
+var EHR_URL = 'https://hfjvc.org/ehr';
+
 /**
  * Credential (license/certification) types an admin can record, with the board
  * whose primary-source lookup the review screen links to. Confirm the links
@@ -126,7 +129,7 @@ var CREDENTIAL_TYPES = {
   'CA ASW Registration': { board: 'Board of Behavioral Sciences', lookupUrl: DCA_SEARCH },
   'CA APCC Registration': { board: 'Board of Behavioral Sciences', lookupUrl: DCA_SEARCH },
   'CA Psychological Associate Registration': { board: 'Board of Psychology', lookupUrl: DCA_SEARCH },
-  // Reserved for e-prescribing via Athena; tracked but not required by the matrix.
+  // For the separate e-prescribing product (the HFJ EHR doesn't prescribe); tracked but not required by the matrix.
   'DEA Registration': { board: 'DEA Diversion Control Division', lookupUrl: 'https://www.deadiversion.usdoj.gov/' },
   'BLS': { board: 'Card issuer (AHA / Red Cross)', lookupUrl: '' },
   'Other': { board: '', lookupUrl: '' }

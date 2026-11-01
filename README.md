@@ -312,8 +312,8 @@ Notes:
 What the import does with the known problems:
 
 - The three tabs merge into one roster. Duplicates are matched by email.
-- `Added to HFJ Google Acct?` and `Added to GDrive?` both map to *Athena
-  access*. It's only marked complete when every mapped column is checked.
+- `Added to HFJ Google Acct?` and `Added to GDrive?` both map to *HFJ EHR
+  access provisioned*. It's only marked complete when every mapped column is checked.
 - `Desired Frequency of 24hr call availability per month` keeps only plain
   whole numbers. Dates (the Sheets autoformat of "1/2") and anything else are
   left blank, with a "re-collect" warning in the report and in the

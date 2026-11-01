@@ -248,7 +248,7 @@ function parseSourceTab(tabName, values) {
   return { tab: tabName, category: tabCategory, columns: columns, records: records };
 }
 
-/** Several source columns can feed one requirement (the two Google-account columns → Athena): all must be true. */
+/** Several source columns can feed one requirement (the two Google-account columns → EHR access): all must be true. */
 function addRequirementCell(rec, key, header, v) {
   var text = cellText(v);
   var entry = rec.reqs[key] || { complete: true, detail: '', date: '', sources: [] };
